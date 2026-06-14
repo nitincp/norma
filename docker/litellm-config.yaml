@@ -1,0 +1,40 @@
+model_list:
+  # Local Ollama — fast validation passes
+  - model_name: local/qwen2.5-0.5b
+    litellm_params:
+      model: ollama/qwen2.5:0.5b
+      api_base: http://host-gateway:11434
+      request_timeout: 30
+
+  - model_name: local/phi3-mini
+    litellm_params:
+      model: ollama/phi3:mini
+      api_base: http://host-gateway:11434
+      request_timeout: 30
+
+  # Cloud fallback — Anthropic
+  - model_name: cloud/claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+      request_timeout: 60
+
+  # Cloud fallback — OpenAI
+  - model_name: cloud/gpt-4o
+    litellm_params:
+      model: gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+      request_timeout: 60
+
+litellm_settings:
+  max_concurrent_requests: 2
+  request_timeout: 30
+  drop_params: true
+
+router_settings:
+  # Try local first; fall back to cloud if local fails
+  routing_strategy: simple-shuffle
+  num_retries: 1
+  fallbacks:
+    - { local/qwen2.5-0.5b: [cloud/claude-sonnet] }
+    - { local/phi3-mini: [cloud/claude-sonnet] }

@@ -1,0 +1,49 @@
+# Promptfoo eval: asserts quality of spec artefacts emitted by Norma.
+# Run: promptfoo eval --config evals/spec_quality.yaml
+
+description: "Norma spec quality — completeness, standard conformance, unambiguity"
+
+providers:
+  - id: openai:chat:gpt-4o
+    config:
+      apiBaseUrl: "{{env.LITELLM_BASE_URL}}"
+      apiKey: "{{env.LITELLM_MASTER_KEY}}"
+
+prompts:
+  - id: spec_quality_judge
+    raw: |
+      You are a strict spec quality judge. Evaluate the following spec artefact.
+
+      Spec language: {{spec_language}}
+      Artefact:
+      ---
+      {{artefact}}
+      ---
+
+      Score each dimension 1-5 and explain:
+      1. Completeness — does it cover all stated requirements?
+      2. Standard conformance — is it valid {{spec_language}}?
+      3. Unambiguity — are there any terms or behaviours that could be interpreted multiple ways?
+
+      Respond in JSON: {"completeness": N, "conformance": N, "unambiguity": N, "notes": "..."}
+
+tests:
+  - description: "OpenAPI artefact must score >=4 on all dimensions"
+    vars:
+      spec_language: OpenAPI 3.1
+      artefact: "{{artefact}}"
+    assert:
+      - type: llm-rubric
+        value: "completeness >= 4 AND conformance >= 4 AND unambiguity >= 4"
+      - type: javascript
+        value: |
+          const r = JSON.parse(output);
+          return r.completeness >= 4 && r.conformance >= 4 && r.unambiguity >= 4;
+
+  - description: "Gherkin artefact must score >=4 on all dimensions"
+    vars:
+      spec_language: Gherkin
+      artefact: "{{artefact}}"
+    assert:
+      - type: llm-rubric
+        value: "completeness >= 4 AND conformance >= 4 AND unambiguity >= 4"
