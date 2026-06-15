@@ -9,7 +9,7 @@ services:
       - ..:/workspace:cached
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - LANGFUSE_HOST=http://langfuse-server:3000
+      - LANGFUSE_HOST=http://langfuse-web:3000
       - LITELLM_BASE_URL=http://litellm-gateway:4000
       - OLLAMA_BASE_URL=http://host-gateway:11434
     extra_hosts:
