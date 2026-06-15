@@ -30,6 +30,7 @@ litellm_settings:
   max_concurrent_requests: 2
   request_timeout: 30
   drop_params: true
+  callbacks: ["langfuse_otel"]
 
 router_settings:
   # Try local first; fall back to cloud if local fails
