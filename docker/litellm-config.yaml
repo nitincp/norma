@@ -26,6 +26,20 @@ model_list:
       api_key: os.environ/OPENAI_API_KEY
       request_timeout: 60
 
+  # Cloud fallback — Google Gemini
+  - model_name: cloud/gemini-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+      request_timeout: 60
+
+  # Cloud fallback — xAI Grok
+  - model_name: cloud/grok
+    litellm_params:
+      model: xai/grok-3-mini
+      api_key: os.environ/XAI_API_KEY
+      request_timeout: 60
+
 litellm_settings:
   max_concurrent_requests: 2
   request_timeout: 30
