@@ -66,8 +66,9 @@ Note what was boring, note what was interesting, move to next requirement.
 
 ## INFRA-001 — Retire Devcontainer
 
-**Status:** Backlog
+**Status:** Done
 **Added:** 2026-06-16
+**Closed:** 2026-06-17
 
 **Goal:** Open the project directly from the Linux VM folder. No devcontainer required to develop or run Norma.
 
@@ -78,13 +79,13 @@ Note what was boring, note what was interesting, move to next requirement.
 
 **Tasks:**
 
-- [ ] Fix CLAUDE.md: correct Ollama description (runs on Linux VM host, not Windows/Hyper-V)
-- [ ] Audit `.devcontainer/` for env vars or mounts not captured in `.env`; migrate anything missing
-- [ ] Write `scripts/bootstrap.sh`: create venv, `pip install -e '.[dev]'`, verify connectivity
-- [ ] Pin Python version: add `requires-python = ">=3.11"` to `pyproject.toml` (or `.python-version` file)
-- [ ] Update `.env` if needed: confirm all URLs use `localhost` (not devcontainer hostnames like `langfuse-web`)
-- [ ] Delete `.devcontainer/`
-- [ ] Update CLAUDE.md: remove dual-URL table, document single `localhost`-based topology
+- [x] Fix CLAUDE.md: correct Ollama description (runs on Linux VM host, not Windows/Hyper-V)
+- [x] Audit `.devcontainer/` for env vars or mounts not captured in `.env`; migrate anything missing
+- [x] Write `scripts/bootstrap.sh`: create venv, `pip install -e '.[dev]'`, verify connectivity
+- [x] Pin Python version: `requires-python = ">=3.12"` already set in `pyproject.toml`
+- [x] Update `.env` and `.env.example`: all URLs now use `localhost`
+- [x] Delete `.devcontainer/`
+- [x] Update CLAUDE.md: added bootstrap command, removed devcontainer reference
 - [ ] Smoke test: `python scripts/run_intake.py` passes from bare Linux venv
 
 **Done when:** A developer can clone the repo, run `scripts/bootstrap.sh`, and execute `python scripts/run_intake.py` with no devcontainer involved.

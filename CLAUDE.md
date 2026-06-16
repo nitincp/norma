@@ -5,6 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
+# First-time setup (creates .venv, installs deps, checks connectivity)
+./scripts/bootstrap.sh
+
 # Install (editable + dev deps)
 pip install -e '.[dev]'
 
@@ -89,7 +92,7 @@ Every LLM prompt is assembled from named PEF components in `src/norma/pef/`:
 
 ### Configuration
 
-`src/norma/settings.py` loads `.env` via `python-dotenv` and exposes typed constants. Import `settings` first in any script that runs outside the devcontainer. Required env vars raise `RuntimeError` if missing.
+`src/norma/settings.py` loads `.env` via `python-dotenv` and exposes typed constants. Required env vars raise `RuntimeError` if missing.
 
 ## Iteration model
 
