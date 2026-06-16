@@ -36,6 +36,7 @@ LITELLM_MASTER_KEY: str = os.getenv("LITELLM_MASTER_KEY", "")
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://host-gateway:11434")
 
 # ── Norma model aliases ───────────────────────────────────────────────────────
-NORMA_DEFAULT_MODEL: str = os.getenv("NORMA_DEFAULT_MODEL", "local/qwen2.5-1.5b")
+# intake node promoted from local/qwen2.5-0.5b (too small) and local/phi3-mini (too slow on CPU)
+NORMA_DEFAULT_MODEL: str = os.getenv("NORMA_DEFAULT_MODEL", "cloud/claude-sonnet")
 NORMA_VALIDATION_MODEL: str = os.getenv("NORMA_VALIDATION_MODEL", "local/qwen2.5-1.5b")
 NORMA_DEEP_MODEL: str = os.getenv("NORMA_DEEP_MODEL", "local/qwen2.5-1.5b")

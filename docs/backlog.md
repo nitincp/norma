@@ -27,12 +27,13 @@ Requirement → INTAKE (COSTAR) → GHERKIN SPECIALIST (CRISPE) → CAI GATE →
 
 ### Tasks
 
-#### T1 — INTAKE NODE
-- [ ] Write COSTAR prompt composition for requirement normalisation
-- [ ] Implement LangGraph node: accepts raw string, emits normalised requirement + actor/dep list
-- [ ] Model: `local/qwen2.5-0.5b`
-- [ ] Langfuse span: `intake`
-- **Done when:** node runs and emits a clean normalised paragraph + bullet list of actors and external deps.
+#### T1 — INTAKE NODE ✓
+- [x] Write COSTAR prompt composition for requirement normalisation (`src/norma/pef/costar.py`)
+- [x] Implement LangGraph node: accepts raw string, emits normalised requirement + actor/dep list (`src/norma/graph/intake.py`)
+- [x] Model: promoted to `cloud/claude-sonnet` — `local/qwen2.5-0.5b` too small for format following; `local/phi3-mini` timed out on CPU-only
+- [x] Langfuse span: `intake`
+- **Done:** node runs and emits a clean normalised paragraph + bullet list of actors and external deps.
+- **Observation:** Format-following requires a capable model; small local models fail at structured output without fine-tuning. Intake stays cloud until a local model is benchmarked on this task.
 
 #### T2 — GHERKIN SPECIALIST NODE
 - [ ] Write CRISPE prompt composition for Gherkin generation
