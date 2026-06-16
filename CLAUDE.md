@@ -29,12 +29,12 @@ python scripts/run_intake.py
 python scripts/test_langfuse.py
 python scripts/test_litellm.py
 
-# Infra (Docker services on the Linux VM host)
-./scripts/infra-up.sh
-./scripts/infra-down.sh
-./scripts/infra-status.sh
-./scripts/infra-logs.sh
-./scripts/infra-restart.sh
+# Infra (Docker services on the Linux VM host) — or use /infra skill
+./.claude/commands/infra/up.sh
+./.claude/commands/infra/down.sh
+./.claude/commands/infra/status.sh
+./.claude/commands/infra/logs.sh
+./.claude/commands/infra/restart.sh
 ```
 
 ## Architecture
