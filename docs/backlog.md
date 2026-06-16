@@ -61,3 +61,30 @@ Requirement → INTAKE (COSTAR) → GHERKIN SPECIALIST (CRISPE) → CAI GATE →
 
 **Stop condition:** If T4 closes on first or second gate attempt — REQ-001 is done.
 Note what was boring, note what was interesting, move to next requirement.
+
+---
+
+## INFRA-001 — Retire Devcontainer
+
+**Status:** Backlog
+**Added:** 2026-06-16
+
+**Goal:** Open the project directly from the Linux VM folder. No devcontainer required to develop or run Norma.
+
+**Context:**
+- All Docker services (Langfuse, LiteLLM) already run on the Linux VM host, not inside the devcontainer.
+- Ollama runs directly on the Linux VM host at `localhost:11434`.
+- From bare Linux, all services are reachable via `localhost` — no devcontainer networking needed.
+
+**Tasks:**
+
+- [ ] Fix CLAUDE.md: correct Ollama description (runs on Linux VM host, not Windows/Hyper-V)
+- [ ] Audit `.devcontainer/` for env vars or mounts not captured in `.env`; migrate anything missing
+- [ ] Write `scripts/bootstrap.sh`: create venv, `pip install -e '.[dev]'`, verify connectivity
+- [ ] Pin Python version: add `requires-python = ">=3.11"` to `pyproject.toml` (or `.python-version` file)
+- [ ] Update `.env` if needed: confirm all URLs use `localhost` (not devcontainer hostnames like `langfuse-web`)
+- [ ] Delete `.devcontainer/`
+- [ ] Update CLAUDE.md: remove dual-URL table, document single `localhost`-based topology
+- [ ] Smoke test: `python scripts/run_intake.py` passes from bare Linux venv
+
+**Done when:** A developer can clone the repo, run `scripts/bootstrap.sh`, and execute `python scripts/run_intake.py` with no devcontainer involved.

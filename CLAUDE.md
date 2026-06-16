@@ -42,12 +42,13 @@ Norma is a **LangGraph pipeline** that converts natural language requirements in
 
 All LLM traffic is routed through the **LiteLLM gateway**; Norma never calls model providers directly.
 
-| Context | Langfuse | LiteLLM | Ollama |
-|---|---|---|---|
-| Python code (devcontainer) | `http://langfuse-web:3000` | `http://litellm-gateway:4000` | `http://host-gateway:11434` |
-| Linux VM shell | `http://localhost:3000` | `http://localhost:4000` | `http://localhost:11434` |
+| Service | URL |
+|---|---|
+| Langfuse | `http://localhost:3000` |
+| LiteLLM | `http://localhost:4000` |
+| Ollama | `http://localhost:11434` |
 
-Langfuse and LiteLLM run as Docker services on the **Linux VM host**, not inside the devcontainer. Ollama runs on the Windows host via Hyper-V and is reached via `host-gateway`.
+Langfuse and LiteLLM run as Docker services on the **Linux VM host**. Ollama also runs directly on the Linux VM host.
 
 ### Model aliases (configured in `docker/litellm-config.yaml`)
 
