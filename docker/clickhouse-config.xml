@@ -1,0 +1,43 @@
+<clickhouse>
+    <!-- Memory: cap at 50% of host RAM; leave headroom for Ollama + other containers -->
+    <max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio>
+    <mark_cache_size>268435456</mark_cache_size>         <!-- 256 MiB -->
+    <index_mark_cache_size>67108864</index_mark_cache_size>  <!-- 64 MiB -->
+    <uncompressed_cache_size>16777216</uncompressed_cache_size> <!-- 16 MiB -->
+
+    <!-- Background pool: pool_size(2) * ratio(2) = 4 >= mutation_threshold(2) — sanity check passes -->
+    <background_pool_size>2</background_pool_size>
+    <background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>
+
+    <merge_tree>
+        <number_of_free_entries_in_pool_to_execute_mutation>2</number_of_free_entries_in_pool_to_execute_mutation>
+        <number_of_free_entries_in_pool_to_lower_max_size_of_merge>2</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+        <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>2</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+    </merge_tree>
+
+    <!-- CPU: limit concurrent load on a CPU-only VM -->
+    <max_concurrent_queries>16</max_concurrent_queries>
+    <max_thread_pool_size>500</max_thread_pool_size>
+
+    <!-- Networking: single-node, no replication needed -->
+    <listen_host>0.0.0.0</listen_host>
+    <interserver_http_port remove="1"/>
+
+    <!-- Disable internal system logs to save CPU + storage -->
+    <query_log remove="1"/>
+    <text_log remove="1"/>
+    <trace_log remove="1"/>
+    <metric_log remove="1"/>
+    <asynchronous_metric_log remove="1"/>
+    <session_log remove="1"/>
+    <part_log remove="1"/>
+
+    <!-- Telemetry off -->
+    <send_crash_reports>
+        <enabled>false</enabled>
+    </send_crash_reports>
+
+    <logger>
+        <level>warning</level>
+    </logger>
+</clickhouse>
