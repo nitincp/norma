@@ -152,6 +152,10 @@ cp .env.example .env
 
 See [norma-requirements.md](norma-requirements.md) for the full requirements document.
 
+See [backlog.md](docs/backlog.md) for requirements queued for pipeline processing.
+
+See [execution-model.md](docs/execution-model.md) for how the project is built and iterated.
+
 ---
 
 ## Wins
