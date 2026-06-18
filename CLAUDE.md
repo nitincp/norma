@@ -5,33 +5,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Install (editable + dev deps)
-pip install -e '.[dev]'
+# First-time setup (installs uv-managed Python 3.12, syncs deps, checks connectivity)
+./scripts/bootstrap.sh
+
+# Sync dependencies (after pulling or editing pyproject.toml)
+uv sync --extra dev
 
 # Lint
-ruff check src/
-ruff format src/
+uv run ruff check src/
+uv run ruff format src/
 
 # Type check
-mypy src/
+uv run mypy src/
 
 # Run tests
-pytest
-pytest tests/path/to/test_file.py::test_name   # single test
+uv run pytest
+uv run pytest tests/path/to/test_file.py::test_name   # single test
 
 # Run the intake node smoke test
-python scripts/run_intake.py
+uv run python scripts/run_intake.py
 
 # Connectivity checks
-python scripts/test_langfuse.py
-python scripts/test_litellm.py
+uv run python scripts/test_langfuse.py
+uv run python scripts/test_litellm.py
 
-# Infra (Docker services on the Linux VM host)
-./scripts/infra-up.sh
-./scripts/infra-down.sh
-./scripts/infra-status.sh
-./scripts/infra-logs.sh
-./scripts/infra-restart.sh
+# Infra (Docker services on the Linux VM host) — or use /infra skill
+./.claude/commands/infra/up.sh
+./.claude/commands/infra/down.sh
+./.claude/commands/infra/status.sh
+./.claude/commands/infra/logs.sh
+./.claude/commands/infra/restart.sh
 ```
 
 ## Architecture
@@ -89,7 +92,7 @@ Every LLM prompt is assembled from named PEF components in `src/norma/pef/`:
 
 ### Configuration
 
-`src/norma/settings.py` loads `.env` via `python-dotenv` and exposes typed constants. Import `settings` first in any script that runs outside the devcontainer. Required env vars raise `RuntimeError` if missing.
+`src/norma/settings.py` loads `.env` via `python-dotenv` and exposes typed constants. Required env vars raise `RuntimeError` if missing.
 
 ## Iteration model
 

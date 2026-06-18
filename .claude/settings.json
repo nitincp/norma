@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s *)",
+      "Bash(docker compose -f * ps*)",
+      "Bash(docker compose -f * logs*)",
+      "Bash(docker logs *)",
+      "Bash(docker ps *)",
+      "Bash(docker inspect *)",
+      "Bash(docker images *)",
+      "Bash(pip show *)",
+      "Bash(pip list *)",
+      "Bash(uv run *)",
+      "Bash(uv sync*)",
+      "Bash(uv python *)",
+      "Bash(uv --version)"
+    ]
+  }
+}
