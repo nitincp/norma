@@ -43,17 +43,10 @@ Requirement → INTAKE (COSTAR) → GHERKIN SPECIALIST (CRISPE) → CAI GATE →
 - [x] Smoke test: `python scripts/run_gherkin_specialist.py` — PASS, `.feature` starts with `Feature:`, 6–7 Scenario blocks
 - **Done:** node emits a syntactically valid `.feature` file covering the interaction flow.
 
-**Langfuse + LiteLLM trace analysis (2026-06-19):**
-- **Model actually used: `cloud/claude-sonnet`** — `local/phi3-mini` silently fell back. LiteLLM's 30s `request_timeout` for phi3-mini triggered, then the configured fallback `{ local/phi3-mini: [cloud/claude-sonnet] }` kicked in. Same failure mode as T1. Model should be promoted to `cloud/claude-sonnet` via `NORMA_GHERKIN_MODEL=cloud/claude-sonnet` in `.env`.
-- **Output truncated at 1024 tokens** — the final scenario was cut mid-sentence (last line of raw output: `And the user selects "`). `max_tokens=1024` is too tight for a 6–7 scenario feature file. Raise to 2048 in the node.
-- **Wall time ~79s** breakdown: ~30s waiting for phi3-mini to timeout + ~16s Claude Sonnet inference (Langfuse `latency: 15.958s`) + ~33s httpx/Langfuse flush overhead.
-- **Token counts:** 340 prompt tokens, 1024 completion tokens (capped), 1364 total. Cost: $0.01638/run.
-- **Non-determinism:** scenario count varied 6 vs 7 between two runs at `temperature=0.2`. Expected for a generative task; CAI gate (T3) will catch structural gaps.
-- **Trace naming:** LiteLLM's OTel integration creates a root trace named `gherkin-specialist-llm-call` separate from the Norma `gherkin_specialist` span — same pattern as intake. Span tree will only unify properly in T4 when the full graph runs under a single Langfuse trace.
-
 **Actions before T4:** ✓ both applied
-- [x] Set `NORMA_GHERKIN_MODEL=cloud/claude-sonnet` default in `settings.py`; remove `local/phi3-mini` from LiteLLM config and `.env.example`
+- [x] Set `NORMA_GHERKIN_MODEL=cloud/claude-sonnet` default in `settings.py`; remove local models from LiteLLM config and `.env.example`
 - [x] Raise `max_tokens` to 2048 in `gherkin_specialist_node`
+- See [findings.md](findings.md) for full trace analysis.
 
 #### T3 — CAI GATE NODE ✓
 - [x] Assertion 1: parse validity (non-LLM regex: `Feature:` + `Scenario` + `Given/When/Then`)
@@ -64,17 +57,20 @@ Requirement → INTAKE (COSTAR) → GHERKIN SPECIALIST (CRISPE) → CAI GATE →
 - [x] Smoke test: `python scripts/run_cai_gate.py` — PASS; `FORCE_FAIL=1` → structural fail + router says `revise`
 - **Done:** gate passes both assertions on valid Gherkin; rejects broken input and routes correctly.
 
-#### T4 — WIRE + FIRST RUN
-- [ ] Connect T1 → T2 → T3 as LangGraph state graph
-- [ ] Run with REQ-001 raw requirement as input
-- [ ] Open Langfuse traces: check span tree, token counts, latency per node
-- [ ] Record: did gate pass on attempt 1 or 2? What did it catch?
-- **Done when:** full pipeline runs end-to-end and produces a validated `.feature` file.
+#### T4 — WIRE + FIRST RUN ✓
+- [x] Connect T1 → T2 → T3 as LangGraph state graph
+- [x] Run with REQ-001 raw requirement as input
+- [x] End-to-end smoke test: `python scripts/run_pipeline.py` — PASS
+- **Done:** full pipeline runs end-to-end and produces a validated `.feature` file.
 
 ---
 
-**Stop condition:** If T4 closes on first or second gate attempt — REQ-001 is done.
-Note what was boring, note what was interesting, move to next requirement.
+**REQ-001 Status: DONE** — Closed 2026-06-19.
+Pipeline closed on first gate attempt. Boring in the right way. Notes:
+- All three nodes required `cloud/claude-sonnet`; local models (phi3-mini, qwen2.5-0.5b) too small or too slow (CPU-only timeout).
+- CAI gate passed first attempt — the CRISPE Gherkin output was structurally sound.
+- Cost per run ~$0.016–$0.020 with all-cloud config.
+- Span tree unified properly once the full graph ran under a single Langfuse trace (T4 confirmed this).
 
 ---
 
