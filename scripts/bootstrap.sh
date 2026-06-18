@@ -3,37 +3,23 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# ── Python version check ───────────────────────────────────────────────────────
-PYTHON=$(command -v python3.12 || command -v python3 || true)
-if [[ -z "$PYTHON" ]]; then
-  echo "ERROR: python3 not found. Install Python 3.12+." >&2
+# ── uv check ──────────────────────────────────────────────────────────────────
+if ! command -v uv &>/dev/null; then
+  echo "ERROR: uv not found. Install it with:"
+  echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
   exit 1
 fi
 
-PY_VERSION=$("$PYTHON" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-if [[ "$(printf '%s\n' "3.12" "$PY_VERSION" | sort -V | head -1)" != "3.12" ]]; then
-  echo "ERROR: Python 3.12+ required, found $PY_VERSION." >&2
-  exit 1
-fi
+echo "uv $(uv --version)"
 
-echo "Using $PYTHON ($PY_VERSION)"
-
-# ── Virtual environment ────────────────────────────────────────────────────────
-VENV="$REPO_ROOT/.venv"
-if [[ ! -d "$VENV" ]]; then
-  echo "Creating virtual environment at $VENV …"
-  "$PYTHON" -m venv "$VENV"
-fi
-
-source "$VENV/bin/activate"
-
-# ── Install package ────────────────────────────────────────────────────────────
-echo "Installing norma (editable) + dev dependencies …"
-pip install --quiet --upgrade pip
-pip install --quiet -e "$REPO_ROOT[dev]"
+# ── Python 3.12 + virtualenv + dependencies ───────────────────────────────────
+echo "Syncing environment (Python 3.12, all dev deps) …"
+cd "$REPO_ROOT"
+uv sync --extra dev
 
 # ── .env check ────────────────────────────────────────────────────────────────
 if [[ ! -f "$REPO_ROOT/.env" ]]; then
+  echo ""
   echo "WARNING: .env not found. Copy .env.example and fill in secrets:"
   echo "  cp .env.example .env"
   echo "Skipping connectivity checks."
@@ -42,9 +28,10 @@ fi
 
 # ── Connectivity checks ────────────────────────────────────────────────────────
 echo "Running connectivity checks …"
-python "$REPO_ROOT/scripts/test_langfuse.py"
-python "$REPO_ROOT/scripts/test_litellm.py"
+uv run python "$REPO_ROOT/scripts/test_langfuse.py"
+uv run python "$REPO_ROOT/scripts/test_litellm.py"
 
 echo ""
-echo "Bootstrap complete. Activate the venv with:"
-echo "  source .venv/bin/activate"
+echo "Bootstrap complete. Run commands with:"
+echo "  uv run python ..."
+echo "  source .venv/bin/activate  (optional, for interactive use)"
