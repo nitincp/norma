@@ -1,3 +1,6 @@
+# Generated artefacts
+output/
+
 # Environment
 .env
 .env.local
