@@ -35,12 +35,25 @@ Requirement → INTAKE (COSTAR) → GHERKIN SPECIALIST (CRISPE) → CAI GATE →
 - **Done:** node runs and emits a clean normalised paragraph + bullet list of actors and external deps.
 - **Observation:** Format-following requires a capable model; small local models fail at structured output without fine-tuning. Intake stays cloud until a local model is benchmarked on this task.
 
-#### T2 — GHERKIN SPECIALIST NODE
-- [ ] Write CRISPE prompt composition for Gherkin generation
-- [ ] Implement LangGraph node: accepts normalised requirement, emits `.feature` file content
-- [ ] Model: `local/phi3-mini`
-- [ ] Langfuse span: `gherkin_specialist`
-- **Done when:** node emits a syntactically valid `.feature` file covering the interaction flow.
+#### T2 — GHERKIN SPECIALIST NODE ✓
+- [x] Write CRISPE prompt composition for Gherkin generation (`src/norma/pef/crispe.py`)
+- [x] Implement LangGraph node: accepts normalised requirement, emits `.feature` file content (`src/norma/graph/gherkin_specialist.py`)
+- [x] Model: promoted to `cloud/claude-sonnet` — `local/phi3-mini` timed out on CPU-only (same as T1); `NORMA_GHERKIN_MODEL` env var (default: `cloud/claude-sonnet`)
+- [x] Langfuse span: `gherkin_specialist`
+- [x] Smoke test: `python scripts/run_gherkin_specialist.py` — PASS, `.feature` starts with `Feature:`, 6–7 Scenario blocks
+- **Done:** node emits a syntactically valid `.feature` file covering the interaction flow.
+
+**Langfuse + LiteLLM trace analysis (2026-06-19):**
+- **Model actually used: `cloud/claude-sonnet`** — `local/phi3-mini` silently fell back. LiteLLM's 30s `request_timeout` for phi3-mini triggered, then the configured fallback `{ local/phi3-mini: [cloud/claude-sonnet] }` kicked in. Same failure mode as T1. Model should be promoted to `cloud/claude-sonnet` via `NORMA_GHERKIN_MODEL=cloud/claude-sonnet` in `.env`.
+- **Output truncated at 1024 tokens** — the final scenario was cut mid-sentence (last line of raw output: `And the user selects "`). `max_tokens=1024` is too tight for a 6–7 scenario feature file. Raise to 2048 in the node.
+- **Wall time ~79s** breakdown: ~30s waiting for phi3-mini to timeout + ~16s Claude Sonnet inference (Langfuse `latency: 15.958s`) + ~33s httpx/Langfuse flush overhead.
+- **Token counts:** 340 prompt tokens, 1024 completion tokens (capped), 1364 total. Cost: $0.01638/run.
+- **Non-determinism:** scenario count varied 6 vs 7 between two runs at `temperature=0.2`. Expected for a generative task; CAI gate (T3) will catch structural gaps.
+- **Trace naming:** LiteLLM's OTel integration creates a root trace named `gherkin-specialist-llm-call` separate from the Norma `gherkin_specialist` span — same pattern as intake. Span tree will only unify properly in T4 when the full graph runs under a single Langfuse trace.
+
+**Actions before T4:** ✓ both applied
+- [x] Set `NORMA_GHERKIN_MODEL=cloud/claude-sonnet` default in `settings.py`; remove `local/phi3-mini` from LiteLLM config and `.env.example`
+- [x] Raise `max_tokens` to 2048 in `gherkin_specialist_node`
 
 #### T3 — CAI GATE NODE
 - [ ] Assertion 1: parse validity (`gherkin-lint` — not LLM)

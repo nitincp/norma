@@ -6,12 +6,6 @@ model_list:
       api_base: http://host-gateway:11434
       request_timeout: 30
 
-  - model_name: local/phi3-mini
-    litellm_params:
-      model: ollama/phi3:mini
-      api_base: http://host-gateway:11434
-      request_timeout: 30
-
   # Cloud fallback — Anthropic
   - model_name: cloud/claude-sonnet
     litellm_params:
@@ -52,4 +46,3 @@ router_settings:
   num_retries: 1
   fallbacks:
     - { local/qwen2.5-0.5b: [cloud/claude-sonnet] }
-    - { local/phi3-mini: [cloud/claude-sonnet] }
