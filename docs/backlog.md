@@ -55,13 +55,14 @@ Requirement → INTAKE (COSTAR) → GHERKIN SPECIALIST (CRISPE) → CAI GATE →
 - [x] Set `NORMA_GHERKIN_MODEL=cloud/claude-sonnet` default in `settings.py`; remove `local/phi3-mini` from LiteLLM config and `.env.example`
 - [x] Raise `max_tokens` to 2048 in `gherkin_specialist_node`
 
-#### T3 — CAI GATE NODE
-- [ ] Assertion 1: parse validity (`gherkin-lint` — not LLM)
-- [ ] Assertion 2: LLM rubric — "covers time-of-day greeting, both content choices, one error path"
-- [ ] Revision loop: fail → back to T2 with gate feedback appended; max 2 revisions
-- [ ] Model: `cloud/claude-sonnet` (rubric judge only)
-- [ ] Langfuse span: `cai_gate`
-- **Done when:** gate passes both assertions.
+#### T3 — CAI GATE NODE ✓
+- [x] Assertion 1: parse validity (non-LLM regex: `Feature:` + `Scenario` + `Given/When/Then`)
+- [x] Assertion 2: LLM rubric — "covers time-of-day greeting, both content choices, one error path"
+- [x] Revision loop: fail → back to T2 with gate feedback appended; max 2 revisions (`route_after_gate`)
+- [x] Model: `cloud/claude-sonnet` (`NORMA_CAI_GATE_MODEL` env var)
+- [x] Langfuse span: `cai_gate`
+- [x] Smoke test: `python scripts/run_cai_gate.py` — PASS; `FORCE_FAIL=1` → structural fail + router says `revise`
+- **Done:** gate passes both assertions on valid Gherkin; rejects broken input and routes correctly.
 
 #### T4 — WIRE + FIRST RUN
 - [ ] Connect T1 → T2 → T3 as LangGraph state graph

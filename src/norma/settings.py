@@ -38,5 +38,6 @@ OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://host-gateway:11434")
 # ── Norma model aliases ───────────────────────────────────────────────────────
 NORMA_DEFAULT_MODEL: str = os.getenv("NORMA_DEFAULT_MODEL", "cloud/claude-sonnet")
 NORMA_GHERKIN_MODEL: str = os.getenv("NORMA_GHERKIN_MODEL", "cloud/claude-sonnet")
+NORMA_CAI_GATE_MODEL: str = os.getenv("NORMA_CAI_GATE_MODEL", "cloud/claude-sonnet")
 NORMA_VALIDATION_MODEL: str = os.getenv("NORMA_VALIDATION_MODEL", "local/qwen2.5-1.5b")
 NORMA_DEEP_MODEL: str = os.getenv("NORMA_DEEP_MODEL", "local/qwen2.5-1.5b")
