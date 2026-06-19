@@ -51,6 +51,22 @@ The format: what happened, what the numbers were, what it means going forward.
 
 ---
 
+## 2026-06-19 — REQ-001 build evaluation: Claude Code vs Gemini
+
+**Context:** REQ-001 Gherkin spec (`output/req_001.feature`) was handed to two AI code assistants independently with no additional context.
+
+**Claude Code:** Built a working Flask app with correct greeting logic (all 4 time bands, correct boundaries), auth vs anonymous handling, real API integrations (zenquotes.io, official-joke-api), error handling with retry, and parametrized pytest covering all 12 time examples from the spec. Tests pass.
+
+**Gemini:** Generated a Behave scaffold with a boilerplate counter scenario unrelated to the spec. Did not implement the app.
+
+**Signal:** Gemini had no context beyond the feature file and could not proceed. Claude Code succeeded but only by making its own assumptions on tech stack, API endpoints, timeout values, and retry limits — none of which were in the spec.
+
+**Conclusion:** The Gherkin spec is necessary but not sufficient. Non-functional requirements (NFRs) are the missing layer. Without them, implementation quality depends on the assistant's willingness to guess — not on the spec's correctness.
+
+**Next step:** Add an NFR Specialist node to the pipeline (→ REQ-002).
+
+---
+
 ## Local model verdict (2026-06-19)
 
 **Conclusion: local inference is not viable on this host for structured output tasks.**

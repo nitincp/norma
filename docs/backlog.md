@@ -74,6 +74,31 @@ Pipeline closed on first gate attempt. Boring in the right way. Notes:
 
 ---
 
+## REQ-002 — NFR Specialist Node
+
+**Status:** Queued
+**Added:** 2026-06-19
+
+**Signal:** REQ-001 build evaluation (Claude Code vs Gemini) revealed that the Gherkin spec alone is insufficient context for an assistant to build correctly without guessing. Claude Code succeeded by making its own assumptions (tech stack, API endpoints, timeout values, retry limits). Gemini failed entirely. The missing layer is non-functional requirements.
+
+**Goal:** Add an NFR Specialist node to the pipeline that extracts or infers non-functional requirements from the raw requirement and appends them to the spec bundle alongside the Gherkin artefact.
+
+**NFR categories to cover:**
+- Tech stack / runtime constraints
+- External API choices and fallbacks
+- Timeout and retry limits
+- Auth model
+- Error handling expectations
+
+**Pipeline position:**
+```
+INTAKE → GHERKIN SPECIALIST → NFR SPECIALIST → CAI GATE → spec bundle (Gherkin + NFR doc)
+```
+
+**Done when:** A spec bundle containing both a `.feature` file and an NFR doc can be handed to any code assistant and produce a correct, consistent implementation without guessing.
+
+---
+
 ## INFRA-001 — Retire Devcontainer
 
 **Status:** Done
