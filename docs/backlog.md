@@ -320,10 +320,10 @@ This keeps PEF as the single source of truth while using each model's self-knowl
 
 ### Tasks
 
-#### T1 — Granular execution: node runner script
-- [ ] `scripts/run_node.py <node> <snapshot.json>` — load state, run node, print diff, save output snapshot
-- [ ] `scripts/run_pipeline2.py` already takes a P1 run dir — document and test this as the standard iteration path for P2 refinement
-- [ ] Save representative state snapshots to `tests/fixtures/` from the latest clean run
+#### T1 — Granular execution: node runner script ✓
+- [x] `scripts/run_node.py <node> <snapshot.json>` — load state, run node, print diff, save output snapshot
+- [x] `scripts/run_pipeline2.py` already takes a P1 run dir — document and test this as the standard iteration path for P2 refinement
+- [x] Save representative state snapshots to `tests/fixtures/` from the latest clean run
 - **Unlocks:** all subsequent tasks — targeted iteration without full pipeline cost
 
 #### T2 — Per-node unit tests from fixtures

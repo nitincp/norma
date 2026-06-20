@@ -1,0 +1,13 @@
+{
+  "raw_requirement": "Generate application to greet user with proper time like Good Morning, Evening. And ask if he/she want to see Quote of the Day or Joke of the Day. And Reply.",
+  "normalised_requirement": "Build a web application that:\n1. Detects or accepts the user's local time.\n2. Greets the user with the appropriate time-of-day salutation (Good Morning / Good Afternoon / Good Evening / Good Night).\n3. Prompts the user to choose between 'Quote of the Day' and 'Joke of the Day'.\n4. Fetches and displays the selected content from an appropriate third-party API.\n5. Handles API errors gracefully with a retry option.",
+  "actors": [
+    "End User",
+    "Quote API",
+    "Joke API"
+  ],
+  "external_deps": [
+    "Quote of the Day API",
+    "Joke of the Day API"
+  ]
+}

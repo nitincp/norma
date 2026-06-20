@@ -1,0 +1,47 @@
+{
+  "raw_requirement": "Generate application to greet user with proper time like Good Morning, Evening. And ask if he/she want to see Quote of the Day or Joke of the Day. And Reply.",
+  "normalised_requirement": "Build a web application that:\n1. Detects or accepts the user's local time.\n2. Greets the user with the appropriate time-of-day salutation (Good Morning / Good Afternoon / Good Evening / Good Night).\n3. Prompts the user to choose between 'Quote of the Day' and 'Joke of the Day'.\n4. Fetches and displays the selected content from an appropriate third-party API.\n5. Handles API errors gracefully with a retry option.",
+  "actors": [
+    "End User",
+    "Quote API",
+    "Joke API"
+  ],
+  "external_deps": [
+    "Quote of the Day API",
+    "Joke of the Day API"
+  ],
+  "gherkin_business": "Feature: Time-based greeting and daily content selection\n\n  Background:\n    Given the user has the application open\n    And the application has detected the client device local time\n\n  Scenario Outline: Greeting displayed based on time of day\n    Given the local time is <time>\n    When the application loads\n    Then the greeting \"<greeting>\" is displayed to the user\n\n    Examples:\n      | time  | greeting          |\n      | 06:00 | Good Morning      |\n      | 13:00 | Good Afternoon    |\n      | 19:00 | Good Evening      |\n      | 23:00 | Good Night        |\n\n  Scenario: User is prompted to select content after greeting\n    Given the greeting has been displayed\n    When the user views the interface\n    Then the options \"Quote of the Day\" and \"Joke of the Day\" are presented\n\n  Scenario: User receives a quote after selecting Quote of the Day\n    Given the greeting and content options are displayed\n    When the user selects \"Quote of the Day\"\n    Then the application retrieves a quote from the Quote-of-the-Day API\n    And the retrieved quote text is displayed in the same session\n\n  Scenario: User receives a joke after selecting Joke of the Day\n    Given the greeting and content options are displayed\n    When the user selects \"Joke of the Day\"\n    Then the application retrieves a joke from the Joke API\n    And the retrieved joke text is displayed in the same session\n\n  Scenario: API failure shows error and retry option\n    Given the user has selected a content option\n    When the corresponding API call fails\n    Then a user-readable error message is displayed\n    And the user is offered the option to retry the request\n\n  Scenario: Retry after API failure retrieves and displays content\n    Given an API failure message and retry option are shown\n    When the user selects retry\n    Then the application calls the API again\n    And the retrieved content is displayed upon success",
+  "gherkin_content": "Feature: Time-based greeting and daily content selection\n\n  Background:\n    Given the user has the application open\n    And the application has detected the client device local time\n\n  Scenario Outline: Greeting displayed based on time of day\n    Given the local time is <time>\n    When the application loads\n    Then the greeting \"<greeting>\" is displayed to the user\n\n    Examples:\n      | time  | greeting          |\n      | 06:00 | Good Morning      |\n      | 13:00 | Good Afternoon    |\n      | 19:00 | Good Evening      |\n      | 23:00 | Good Night        |\n\n  Scenario: User is prompted to select content after greeting\n    Given the greeting has been displayed\n    When the user views the interface\n    Then the options \"Quote of the Day\" and \"Joke of the Day\" are presented\n\n  Scenario: User receives a quote after selecting Quote of the Day\n    Given the greeting and content options are displayed\n    When the user selects \"Quote of the Day\"\n    Then the application retrieves a quote from the Quote-of-the-Day API\n    And the retrieved quote text is displayed in the same session\n\n  Scenario: User receives a joke after selecting Joke of the Day\n    Given the greeting and content options are displayed\n    When the user selects \"Joke of the Day\"\n    Then the application retrieves a joke from the Joke API\n    And the retrieved joke text is displayed in the same session\n\n  Scenario: API failure shows error and retry option\n    Given the user has selected a content option\n    When the corresponding API call fails\n    Then a user-readable error message is displayed\n    And the user is offered the option to retry the request\n\n  Scenario: Retry after API failure retrieves and displays content\n    Given an API failure message and retry option are shown\n    When the user selects retry\n    Then the application calls the API again\n    And the retrieved content is displayed upon success",
+  "environment_options": [
+    {
+      "runtime": "Node.js 22",
+      "framework": "Next.js 14 (React)",
+      "deployment": "Vercel / Docker",
+      "rationale": "The requirement for client-device local time detection, a single-session interactive UI with two user-selectable options, third-party API calls, and inline error-with-retry handling maps directly to a React component tree where time is read via the browser's Date API and API calls are made client-side or via lightweight server routes, all of which Next.js handles natively with minimal infrastructure.",
+      "rank": 1
+    },
+    {
+      "runtime": "Node.js 22",
+      "framework": "Express + Vanilla JS / HTMX",
+      "deployment": "Docker / Railway",
+      "rationale": "The requirement's emphasis on a simple two-option prompt, single text response display, and retry flow within the same interface session is achievable with a thin Express server rendering HTML fragments via HTMX, keeping the stack lightweight given there is no stated need for complex client-side state.",
+      "rank": 2
+    },
+    {
+      "runtime": "Python 3.12",
+      "framework": "FastAPI + Jinja2",
+      "deployment": "Docker / GCP Cloud Run",
+      "rationale": "FastAPI with Jinja2 templates can serve the time-based greeting (resolved client-side via a small JS snippet), render the two-option prompt, proxy calls to the Quote-of-the-Day or Joke API, and return user-readable error messages with a retry option, satisfying all stated functional requirements with a widely adopted Python stack.",
+      "rank": 3
+    }
+  ],
+  "selected_environment": {
+    "runtime": "Node.js 22",
+    "framework": "Next.js 14 (React)",
+    "deployment": "Vercel / Docker",
+    "rationale": "The requirement for client-device local time detection, a single-session interactive UI with two user-selectable options, third-party API calls, and inline error-with-retry handling maps directly to a React component tree where time is read via the browser's Date API and API calls are made client-side or via lightweight server routes, all of which Next.js handles natively with minimal infrastructure.",
+    "rank": 1
+  },
+  "stage1_passed": true,
+  "stage1_feedback": ""
+}
