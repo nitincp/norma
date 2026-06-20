@@ -333,12 +333,12 @@ This keeps PEF as the single source of truth while using each model's self-knowl
 - **Done:** 55 tests total (30 new), all passing; baselines locked in for intake, gherkin_specialist, stage1_gate, stage2_gate nodes
 
 #### T3 — Self-anchoring one-shot in Spec Specialist
-- [ ] Add two-phase instruction to `statement` field in `spec_specialist.py` CRISPE:
+- [x] Add two-phase instruction to `statement` field in `spec_specialist.py` CRISPE:
   - Step 1: generate a 4–6 line canonical example of the required spec type (structure, headings, keyword style)
   - Step 2: using that example as scaffold, write the full artefact for the requirement segments
-- [ ] This replaces any static example registry — the model surfaces its own format knowledge before applying it; works for any dynamically recommended spec type
-- [ ] Run Gemini variant via `run_node.py` on rfc2119 — verify non-LLM `# Constraints` assertion passes
-- [ ] If still failing: reverse prompting loop (max 3 cycles), record quirk_log
+- [x] This replaces any static example registry — the model surfaces its own format knowledge before applying it; works for any dynamically recommended spec type
+- [x] Run Gemini variant via `run_node.py` on rfc2119 — verify non-LLM `# Constraints` assertion passes
+- [x] If still failing: reverse prompting loop (max 3 cycles), record quirk_log — not needed, passed first try
 - **Rationale:** model cannot "forget" a structural requirement it just wrote in its own example; self-anchoring works for any spec type without pre-knowledge of what the Advisor will recommend
 - **Depends on:** T1
 

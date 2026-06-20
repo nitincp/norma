@@ -7,11 +7,12 @@ Tests cover:
 - existing spec_artefacts are preserved (fan-in accumulation)
 - markdown fences stripped from LLM output
 - _build_crispe assembles all six CRISPE fields correctly
+- two-phase self-anchoring: ## EXAMPLE / ## ARTEFACT extraction
 """
 
 from unittest.mock import MagicMock, patch
 
-from norma.graph.spec_specialist import _build_crispe, spec_specialist_node
+from norma.graph.spec_specialist import _STATEMENT_PREFIX, _build_crispe, spec_specialist_node
 from norma.graph.state import NormaState, SpecRecommendation
 
 _RFC2119_REC = SpecRecommendation(
@@ -32,13 +33,23 @@ _RFC2119_REC = SpecRecommendation(
     ),
 )
 
-_RFC2119_CONTENT = (
+_RFC2119_ARTEFACT = (
     "# Constraints\n\n"
     "## Performance\n"
     "- MUST respond within 2 seconds. [implied]\n\n"
     "## Availability\n"
     "- MUST NOT propagate upstream API errors to the user without a fallback message."
 )
+
+_RFC2119_EXAMPLE = (
+    "# Constraints\n\n"
+    "## <Theme>\n"
+    "- MUST <verb> <object>.\n"
+    "- SHOULD <verb> <object>.\n"
+    "- MAY <verb> <object>."
+)
+
+_RFC2119_CONTENT = f"## EXAMPLE\n{_RFC2119_EXAMPLE}\n\n## ARTEFACT\n{_RFC2119_ARTEFACT}"
 
 _BASE_STATE: NormaState = {
     "raw_requirement": "Build a greeting app",
@@ -75,7 +86,15 @@ def test_build_crispe_injects_recommendation_fields():
     crispe = _build_crispe(_RFC2119_REC)
     assert crispe.role == _RFC2119_REC["role"]
     assert crispe.insight == _RFC2119_REC["insight"]
-    assert crispe.statement == _RFC2119_REC["statement"]
+    # statement is the two-phase prefix + the advisor's format rules
+    assert _RFC2119_REC["statement"] in crispe.statement
+
+
+def test_build_crispe_statement_contains_two_phase_prefix():
+    crispe = _build_crispe(_RFC2119_REC)
+    assert "Phase 1" in crispe.statement
+    assert "Phase 2" in crispe.statement
+    assert "RFC 2119" in crispe.statement  # language name interpolated into prefix
 
 
 def test_build_crispe_has_fixed_capacity_and_personality():
@@ -103,7 +122,7 @@ def test_shell_stores_artefact_under_correct_key(mock_client_cls, mock_langfuse_
 
     assert "spec_artefacts" in result
     assert "rfc2119" in result["spec_artefacts"]
-    assert result["spec_artefacts"]["rfc2119"] == _RFC2119_CONTENT
+    assert result["spec_artefacts"]["rfc2119"] == _RFC2119_ARTEFACT
 
 
 @patch("norma.graph.spec_specialist.Langfuse")
@@ -115,19 +134,31 @@ def test_shell_returns_only_its_artefact_key(mock_client_cls, mock_langfuse_cls)
 
     result = spec_specialist_node(_BASE_STATE)
 
-    assert result == {"spec_artefacts": {"rfc2119": _RFC2119_CONTENT}}
+    assert result == {"spec_artefacts": {"rfc2119": _RFC2119_ARTEFACT}}
 
 
 @patch("norma.graph.spec_specialist.Langfuse")
 @patch("norma.graph.spec_specialist.httpx.Client")
 def test_shell_strips_markdown_fences(mock_client_cls, mock_langfuse_cls):
-    fenced = f"```markdown\n{_RFC2119_CONTENT}\n```"
+    fenced = f"## EXAMPLE\n{_RFC2119_EXAMPLE}\n\n## ARTEFACT\n```markdown\n{_RFC2119_ARTEFACT}\n```"
     mock_client_cls.return_value = _mock_http(fenced)
     mock_langfuse_cls.return_value = _mock_langfuse()
 
     result = spec_specialist_node(_BASE_STATE)
 
     assert not result["spec_artefacts"]["rfc2119"].startswith("```")
+    assert "# Constraints" in result["spec_artefacts"]["rfc2119"]
+
+
+@patch("norma.graph.spec_specialist.Langfuse")
+@patch("norma.graph.spec_specialist.httpx.Client")
+def test_shell_fallback_when_no_artefact_label(mock_client_cls, mock_langfuse_cls):
+    """If model omits ## ARTEFACT, full response is stored rather than dropping output."""
+    mock_client_cls.return_value = _mock_http(_RFC2119_ARTEFACT)
+    mock_langfuse_cls.return_value = _mock_langfuse()
+
+    result = spec_specialist_node(_BASE_STATE)
+
     assert "# Constraints" in result["spec_artefacts"]["rfc2119"]
 
 

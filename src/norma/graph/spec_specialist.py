@@ -42,18 +42,29 @@ _PERSONALITY = (
 )
 
 _EXPERIMENT = (
-    "Output ONLY the artefact as specified in STATEMENT. "
-    "No title beyond what STATEMENT prescribes. No preamble. No markdown fences. "
+    "Follow the two-phase structure in STATEMENT exactly: output '## EXAMPLE' then '## ARTEFACT'. "
+    "No markdown fences. No preamble outside those two sections. "
     "Mark inferred content with [implied] inline."
 )
 
 
+_STATEMENT_PREFIX = (
+    "Work in two phases:\n"
+    "Phase 1 — Write a 4–6 line canonical example of a well-formed {language} artefact "
+    "(structure, headings, keyword style). Label it '## EXAMPLE'.\n"
+    "Phase 2 — Using that example as your structural scaffold, write the full artefact "
+    "for the requirement segments below. Label it '## ARTEFACT'.\n\n"
+    "Format rules from the Spec Advisor:\n"
+)
+
+
 def _build_crispe(rec: SpecRecommendation) -> CRISPE:
+    statement = _STATEMENT_PREFIX.format(language=rec["language"]) + rec["statement"]
     return CRISPE(
         capacity=_CAPACITY,
         role=rec["role"],
         insight=rec["insight"],
-        statement=rec["statement"],
+        statement=statement,
         personality=_PERSONALITY,
         experiment=_EXPERIMENT,
     )
@@ -107,7 +118,14 @@ def spec_specialist_node(state: NormaState) -> NormaState:
             )
 
         resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"].strip()
+        raw = resp.json()["choices"][0]["message"]["content"].strip()
+
+        # Extract the ## ARTEFACT section produced by the two-phase prompt.
+        # Fall back to the full response if the model omits the label.
+        if "## ARTEFACT" in raw:
+            content = raw.split("## ARTEFACT", 1)[1].strip()
+        else:
+            content = raw
 
         # Strip accidental markdown fences
         if content.startswith("```"):
