@@ -326,12 +326,11 @@ This keeps PEF as the single source of truth while using each model's self-knowl
 - [x] Save representative state snapshots to `tests/fixtures/` from the latest clean run
 - **Unlocks:** all subsequent tasks — targeted iteration without full pipeline cost
 
-#### T2 — Per-node unit tests from fixtures
-- [ ] `tests/test_node_intake.py`, `test_node_gherkin_specialist.py` etc. — load fixture, run node, assert key state keys present and non-empty
-- [ ] Gate nodes: assert PASS/FAIL verdict parsing, not LLM content
-- [ ] Mark LLM-dependent tests with `@pytest.mark.llm` so they can be skipped in fast CI
-- **Must run before T4/T5/T3:** locks in known-good baselines before any prompt or schema changes; regressions surface immediately
-- **Depends on:** T1 (fixtures come from node runner runs)
+#### T2 — Per-node unit tests from fixtures ✓
+- [x] `tests/test_node_intake.py`, `test_node_gherkin_specialist.py`, `test_node_gates.py` — load fixture, run node, assert key state keys present and non-empty
+- [x] Gate nodes: assert PASS/FAIL verdict parsing, not LLM content; non-LLM assertions tested without mocking
+- [x] Mark LLM-dependent tests with `@pytest.mark.llm`; registered in `pyproject.toml`; skip with `-m 'not llm'`
+- **Done:** 55 tests total (30 new), all passing; baselines locked in for intake, gherkin_specialist, stage1_gate, stage2_gate nodes
 
 #### T3 — Self-anchoring one-shot in Spec Specialist
 - [ ] Add two-phase instruction to `statement` field in `spec_specialist.py` CRISPE:
