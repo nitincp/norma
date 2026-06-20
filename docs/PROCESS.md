@@ -97,7 +97,7 @@ No rewriting whole prompts. Surgical field edits, observed effect.
 | Built app works first time | Spec quality confirmed, move to next requirement |
 | Built app fails or needs clarification | Spec was incomplete — refine the responsible PEF composition |
 | Requirement fully spec'd, boring | Pick next requirement (harder scope) |
-| Cloud model overkill on a node | Switch to cheaper cloud alias (grok-3-mini, gemini-flash) |
+| Cloud model costs too high on a node | Switch to cheaper cloud alias (`cloud/grok`, `cloud/gemini-flash`) |
 
 ---
 

@@ -3,7 +3,7 @@
 Requirements queued for processing through the Norma pipeline.
 Each entry is raw natural language — Norma's intake node handles normalisation.
 
-See [execution-model.md](execution-model.md) for how tasks are built and iterated.
+See [PROCESS.md](PROCESS.md) for how tasks are built and iterated.
 
 ---
 
@@ -30,23 +30,18 @@ Requirement → INTAKE (COSTAR) → GHERKIN SPECIALIST (CRISPE) → CAI GATE →
 #### T1 — INTAKE NODE ✓
 - [x] Write COSTAR prompt composition for requirement normalisation (`src/norma/pef/costar.py`)
 - [x] Implement LangGraph node: accepts raw string, emits normalised requirement + actor/dep list (`src/norma/graph/intake.py`)
-- [x] Model: promoted to `cloud/claude-sonnet` — `local/qwen2.5-0.5b` too small for format following; `local/phi3-mini` timed out on CPU-only
+- [x] Model: `cloud/claude-sonnet` (`NORMA_INTAKE_MODEL` env var)
 - [x] Langfuse span: `intake`
 - **Done:** node runs and emits a clean normalised paragraph + bullet list of actors and external deps.
-- **Observation:** Format-following requires a capable model; small local models fail at structured output without fine-tuning. Intake stays cloud until a local model is benchmarked on this task.
 
 #### T2 — GHERKIN SPECIALIST NODE ✓
 - [x] Write CRISPE prompt composition for Gherkin generation (`src/norma/pef/crispe.py`)
 - [x] Implement LangGraph node: accepts normalised requirement, emits `.feature` file content (`src/norma/graph/gherkin_specialist.py`)
-- [x] Model: promoted to `cloud/claude-sonnet` — `local/phi3-mini` timed out on CPU-only (same as T1); `NORMA_GHERKIN_MODEL` env var (default: `cloud/claude-sonnet`)
+- [x] Model: `cloud/claude-sonnet` (`NORMA_GHERKIN_MODEL` env var)
 - [x] Langfuse span: `gherkin_specialist`
 - [x] Smoke test: `python scripts/run_gherkin_specialist.py` — PASS, `.feature` starts with `Feature:`, 6–7 Scenario blocks
+- [x] Raise `max_tokens` to 2048
 - **Done:** node emits a syntactically valid `.feature` file covering the interaction flow.
-
-**Actions before T4:** ✓ both applied
-- [x] Set `NORMA_GHERKIN_MODEL=cloud/claude-sonnet` default in `settings.py`; remove local models from LiteLLM config and `.env.example`
-- [x] Raise `max_tokens` to 2048 in `gherkin_specialist_node`
-- See [findings.md](findings.md) for full trace analysis.
 
 #### T3 — CAI GATE NODE ✓
 - [x] Assertion 1: parse validity (non-LLM regex: `Feature:` + `Scenario` + `Given/When/Then`)
@@ -67,24 +62,23 @@ Requirement → INTAKE (COSTAR) → GHERKIN SPECIALIST (CRISPE) → CAI GATE →
 
 **REQ-001 Status: DONE** — Closed 2026-06-19.
 Pipeline closed on first gate attempt. Boring in the right way. Notes:
-- All three nodes required `cloud/claude-sonnet`; local models (phi3-mini, qwen2.5-0.5b) too small or too slow (CPU-only timeout).
 - CAI gate passed first attempt — the CRISPE Gherkin output was structurally sound.
-- Cost per run ~$0.016–$0.020 with all-cloud config.
+- Cost per run ~$0.016–$0.020.
 - Span tree unified properly once the full graph ran under a single Langfuse trace (T4 confirmed this).
 
 ---
 
-## REQ-002 — NFR Specialist Node
+## REQ-002 — Constraints Specialist Node (shipped as NFR)
 
 **Status:** Done
 **Added:** 2026-06-19
 **Closed:** 2026-06-19
 
-**Signal:** REQ-001 build evaluation (Claude Code vs Gemini) revealed that the Gherkin spec alone is insufficient context for an assistant to build correctly without guessing. Claude Code succeeded by making its own assumptions (tech stack, API endpoints, timeout values, retry limits). Gemini failed entirely. The missing layer is non-functional requirements.
+**Signal:** REQ-001 build evaluation revealed that Gherkin alone is insufficient — a code assistant must guess tech stack, API choices, timeouts, and auth model. The missing layer is a constraints artefact.
 
-**Goal:** Add an NFR Specialist node to the pipeline that extracts or infers non-functional requirements from the raw requirement and appends them to the spec bundle alongside the Gherkin artefact.
+**Note:** Shipped as an "NFR doc" (non-standard). REQ-003 replaces this node with an **RFC 2119 Constraints Specialist** that emits MUST/SHOULD/MAY statements — a proper standard. The NFR node is a stepping stone.
 
-**NFR categories to cover:**
+**Categories covered:**
 - Tech stack / runtime constraints
 - External API choices and fallbacks
 - Timeout and retry limits
@@ -95,8 +89,6 @@ Pipeline closed on first gate attempt. Boring in the right way. Notes:
 ```
 INTAKE → GHERKIN SPECIALIST → NFR SPECIALIST → CAI GATE → spec bundle (Gherkin + NFR doc)
 ```
-
-**Done when:** A spec bundle containing both a `.feature` file and an NFR doc can be handed to any code assistant and produce a correct, consistent implementation without guessing.
 
 ---
 
@@ -116,6 +108,81 @@ INTAKE → GHERKIN SPECIALIST → NFR SPECIALIST → CAI GATE → spec bundle (G
 - [x] End-to-end pipeline run with REQ-001 input; verify both `gherkin_content` and `nfr_content` in final state — PASS, gate on first attempt
 - [x] Validate NFR doc covers all 5 categories for the greeting app domain — all 5 sections present
 - [x] Artefacts written to `output/req_001.nfr.md` alongside `output/req_001.feature`
+
+---
+
+## REQ-003 — Spec Advisor + Dynamic Specialist Pipeline
+
+**Status:** Planned
+**Added:** 2026-06-20
+
+**Goal:** Restructure the pipeline so that bundle composition is determined per-requirement, not hardcoded. The Spec Advisor reads INTAKE output and recommends which spec languages are needed. Only the recommended specialists run.
+
+**Architecture decisions:**
+- **INTAKE fans out in parallel** to GHERKIN SPECIALIST and SPEC ADVISOR — both start immediately from the normalised requirement.
+- **GHERKIN SPECIALIST is permanent** — every requirement has behaviour; `.feature` is always in the bundle.
+- **SPEC ADVISOR is permanent** — reads INTAKE; outputs a structured recommendation: which spec languages, why, and sequencing constraints (e.g. JSON Schema needs OpenAPI first). Uses CRISPE.
+- **SPEC SPECIALIST(s) are dynamic** — injected by the graph based on Spec Advisor output; each reads INTAKE directly. Not every requirement needs every specialist.
+- **NFR node (REQ-002) retired** — the Spec Advisor will recommend RFC 2119 when constraints are needed; an RFC 2119 Specialist is one of the injectable candidates.
+- **CAI GATE validates whatever artefacts are present** — assertions are keyed to the artefact type, not a fixed bundle shape.
+
+**Candidate spec specialists (injectable):**
+| Specialist | Standard | Artefact |
+|---|---|---|
+| RFC 2119 Constraints | RFC 2119 / RFC 8174 | `req.constraints.md` |
+| HTTP Contract | OpenAPI 3.1 | `req.openapi.yaml` |
+| Payload Shapes | JSON Schema Draft 2020-12 | `req.schema.json` |
+| Architecture | C4 / Structurizr DSL | `req.c4` |
+| Async Events | AsyncAPI 3.0 | `req.asyncapi.yaml` |
+
+**Pipeline shape:**
+```
+                          ┌─ GHERKIN SPECIALIST ──────────────────────────────┐
+INTAKE ───────────────────┤                                                    ├─ CAI GATE → spec bundle
+                          └─ SPEC ADVISOR → SPEC SPECIALIST(s) [per advice] ──┘
+```
+
+**Build loop validation:**
+- Run Norma on REQ-001 → spec bundle in `output/specs/req_001/`
+- Point a code assistant at that folder with the prompt: _"Implement the application described in this spec bundle."_ The bundle carries everything; the prompt carries nothing.
+- Any guess or clarifying question is a Norma failure → identify gap → fix responsible PEF composition.
+
+---
+
+### Tasks
+
+#### T1 — Spec Advisor node
+- [ ] CRISPE prompt: reads `normalised_requirement`; emits structured advice — list of recommended spec languages with rationale and any ordering constraints
+- [ ] `src/norma/graph/spec_advisor.py`
+- [ ] Add `spec_advice: NotRequired[list[SpecRecommendation]]` to `NormaState` (SpecRecommendation: `{language: str, rationale: str, depends_on: list[str]}`)
+- [ ] Model: `cloud/claude-sonnet` (`NORMA_SPEC_ADVISOR_MODEL` env var)
+- [ ] Langfuse span: `spec_advisor`
+- [ ] Smoke test: `scripts/run_spec_advisor.py` — verify advice for REQ-001 recommends RFC 2119 at minimum
+
+#### T2 — Dynamic specialist routing
+- [ ] Graph router reads `spec_advice` and injects the appropriate specialist nodes
+- [ ] Specialists with no `depends_on` run in parallel; sequenced specialists wait for their dependency
+- [ ] Each specialist reads `normalised_requirement` from state (INTAKE output) directly
+- [ ] Merge node collects all specialist outputs before CAI GATE
+
+#### T3 — RFC 2119 Constraints Specialist
+- [ ] `src/norma/graph/rfc2119_specialist.py` (replaces `nfr_specialist.py`)
+- [ ] CRISPE prompt: reads `normalised_requirement`; emits MUST/SHOULD/MAY statements grouped by category
+- [ ] `constraints_content: NotRequired[str]` in `NormaState` (rename from `nfr_content`)
+- [ ] CAI gate assertion: MUST/SHOULD/MAY keywords present; mandatory categories covered
+- [ ] Model: `cloud/claude-sonnet` (`NORMA_CONSTRAINTS_MODEL` env var)
+- [ ] Smoke test: `scripts/run_rfc2119_specialist.py`
+
+#### T4 — Parallel INTAKE fan-out
+- [ ] Refactor graph entry: INTAKE → parallel [GHERKIN SPECIALIST, SPEC ADVISOR]
+- [ ] SPEC ADVISOR output gates specialist injection (T2)
+- [ ] End-to-end smoke test: GHERKIN and at least one dynamic specialist present in final state
+
+#### T5 — Build loop test (REQ-001)
+- [ ] Run Norma on REQ-001; write bundle to `output/specs/req_001/`
+- [ ] Claude Code session: `implement the application described in this spec bundle` (no other context)
+- [ ] Record: any guesses, any clarifying questions, any spec gaps
+- [ ] Triage gaps → PEF refinement tasks
 
 ---
 

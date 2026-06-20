@@ -39,7 +39,7 @@ uv run python scripts/test_litellm.py
 
 ## Architecture
 
-Norma is a **LangGraph pipeline** that converts natural language requirements into layered spec bundles (OpenAPI, AsyncAPI, JSON Schema, Gherkin, MADR, C4 DSL).
+Norma is a **LangGraph pipeline** that converts natural language requirements into layered spec bundles. The bundle composition is determined per-requirement by the Spec Advisor.
 
 ### Service topology
 
@@ -49,16 +49,13 @@ All LLM traffic is routed through the **LiteLLM gateway**; Norma never calls mod
 |---|---|
 | Langfuse | `http://localhost:3000` |
 | LiteLLM | `http://localhost:4000` |
-| Ollama | `http://localhost:11434` |
 
-Langfuse and LiteLLM run as Docker services on the **Linux VM host**. Ollama also runs directly on the Linux VM host.
+Langfuse and LiteLLM run as Docker services on the **Linux VM host**.
 
 ### Model aliases (configured in `docker/litellm-config.yaml`)
 
 | Alias | Backend |
 |---|---|
-| `local/qwen2.5-0.5b` | `ollama/qwen2.5:0.5b` |
-| `local/phi3-mini` | `ollama/phi3:mini` |
 | `cloud/claude-sonnet` | `anthropic/claude-sonnet-4-6` |
 | `cloud/gpt-4o` | `gpt-4o` |
 | `cloud/gemini-flash` | `gemini/gemini-2.5-flash-lite` |
@@ -67,9 +64,16 @@ Langfuse and LiteLLM run as Docker services on the **Linux VM host**. Ollama als
 ### Graph pipeline
 
 ```
-raw_requirement → INTAKE NODE (COSTAR) → SPEC ADVISOR (CRISPE) → SPEC SPECIALIST(s) [parallel]
-  → CONSTITUTIONAL AI GATE (Promptfoo) → COMPOSER → spec bundle
+                          ┌─ GHERKIN SPECIALIST ──────────────────────────────┐
+INTAKE ───────────────────┤                                                    ├─ CAI GATE → spec bundle
+                          └─ SPEC ADVISOR → SPEC SPECIALIST(s) [per advice] ──┘
 ```
+
+- **INTAKE** — normalises the raw requirement (COSTAR); permanent
+- **GHERKIN SPECIALIST** — always runs in parallel with Spec Advisor; reads INTAKE; emits `.feature` file
+- **SPEC ADVISOR** — reads INTAKE; recommends which spec languages and layers are needed for this requirement (CRISPE); permanent
+- **SPEC SPECIALIST(s)** — injected dynamically based on Spec Advisor output; each reads INTAKE; candidates: RFC 2119, OpenAPI, JSON Schema, C4 DSL, AsyncAPI, …
+- **CAI GATE** — validates all artefacts; permanent
 
 **LangGraph state** is `NormaState` (TypedDict in `src/norma/graph/state.py`). Each node receives the full state dict and returns an updated copy.
 
@@ -88,7 +92,6 @@ Every LLM prompt is assembled from named PEF components in `src/norma/pef/`:
 - **LiteLLM is the only inference endpoint** — `settings.LITELLM_BASE_URL` + `settings.LITELLM_MASTER_KEY`
 - **Every node emits a Langfuse span** — use `langfuse.start_as_current_observation(..., as_type="span")`
 - **CAI gate is not optional** — every artefact passes the gate before emission
-- `OLLAMA_NUM_PARALLEL=1` is mandatory (CPU-only host, prevents thrashing)
 
 ### Configuration
 
@@ -96,6 +99,6 @@ Every LLM prompt is assembled from named PEF components in `src/norma/pef/`:
 
 ## Iteration model
 
-Run → observe Langfuse traces → validate artefact → refine one PEF field → re-run. Don't rewrite whole prompts — surgical single-field edits only. See `docs/execution-model.md` for the full rhythm.
+Run → observe Langfuse traces → validate artefact → refine one PEF field → re-run. Don't rewrite whole prompts — surgical single-field edits only. See `docs/PROCESS.md` for the full rhythm.
 
-Model promotion: if a local model produces consistently poor output on a node, promote that node's model to `cloud/claude-sonnet` via the `NORMA_*_MODEL` env vars. Demote when the local model proves sufficient.
+All nodes default to `cloud/claude-sonnet`. Cost reduction is via cheaper cloud aliases (`cloud/grok`, `cloud/gemini-flash`) once quality is baselined on a node.
