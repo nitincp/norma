@@ -241,6 +241,8 @@ def spec_advisor_node(state: NormaState) -> NormaState:
                     "metadata": {
                         "generation_name": "spec-advisor-llm-call",
                         "tags": ["spec_advisor", "norma"],
+                        "trace_id": langfuse.get_current_trace_id(),
+                        "parent_observation_id": langfuse.get_current_observation_id(),
                     },
                 },
             )

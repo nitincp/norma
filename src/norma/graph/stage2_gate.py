@@ -69,6 +69,8 @@ def _assertion_2_technical_gherkin_coverage(
     gherkin_technical: str,
     spec_artefacts: dict[str, str],
     client: httpx.Client,
+    trace_id: str | None = None,
+    parent_observation_id: str | None = None,
 ) -> tuple[bool, str]:
     """LLM rubric: do @technical scenarios cover spec constraints?"""
     artefact_block = "\n\n".join(
@@ -93,6 +95,8 @@ def _assertion_2_technical_gherkin_coverage(
             "metadata": {
                 "generation_name": "stage2-gate-rubric-call",
                 "tags": ["stage2_gate", "norma"],
+                "trace_id": trace_id,
+                "parent_observation_id": parent_observation_id,
             },
         },
     )
@@ -146,7 +150,9 @@ def stage2_gate_node(state: NormaState) -> NormaState:
         # Assertion 2 — LLM rubric: technical Gherkin covers spec constraints
         with httpx.Client(timeout=60.0) as client:
             ok, msg = _assertion_2_technical_gherkin_coverage(
-                gherkin_technical, spec_artefacts, client
+                gherkin_technical, spec_artefacts, client,
+                trace_id=langfuse.get_current_trace_id(),
+                parent_observation_id=langfuse.get_current_observation_id(),
             )
         if not ok:
             return _fail(f"Technical Gherkin coverage rubric failed: {msg}", 2)

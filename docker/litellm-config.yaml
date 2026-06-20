@@ -1,17 +1,12 @@
 model_list:
-  # Local Ollama — fast validation passes
-  - model_name: local/qwen2.5-0.5b
-    litellm_params:
-      model: ollama/qwen2.5:0.5b
-      api_base: http://host-gateway:11434
-      request_timeout: 30
-
   # Cloud fallback — Anthropic
   - model_name: cloud/claude-sonnet
     litellm_params:
       model: anthropic/claude-sonnet-4-6
       api_key: os.environ/ANTHROPIC_API_KEY
       request_timeout: 60
+    model_info:
+      base_model: claude-sonnet-4-6
 
   # Cloud fallback — OpenAI
   - model_name: cloud/gpt-4o
@@ -19,6 +14,8 @@ model_list:
       model: gpt-4o
       api_key: os.environ/OPENAI_API_KEY
       request_timeout: 60
+    model_info:
+      base_model: gpt-4o
 
   # Cloud fallback — Google Gemini
   - model_name: cloud/gemini-flash
@@ -26,6 +23,8 @@ model_list:
       model: gemini/gemini-2.5-flash-lite
       api_key: os.environ/GEMINI_API_KEY
       request_timeout: 60
+    model_info:
+      base_model: gemini/gemini-2.5-flash-lite
 
   # Cloud fallback — xAI Grok
   - model_name: cloud/grok
@@ -33,6 +32,8 @@ model_list:
       model: xai/grok-3-mini
       api_key: os.environ/XAI_API_KEY
       request_timeout: 60
+    model_info:
+      base_model: grok-3-mini
 
 litellm_settings:
   max_concurrent_requests: 2
@@ -41,8 +42,5 @@ litellm_settings:
   callbacks: ["langfuse_otel"]
 
 router_settings:
-  # Try local first; fall back to cloud if local fails
   routing_strategy: simple-shuffle
   num_retries: 1
-  fallbacks:
-    - { local/qwen2.5-0.5b: [cloud/claude-sonnet] }

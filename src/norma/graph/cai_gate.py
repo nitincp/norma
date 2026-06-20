@@ -62,7 +62,12 @@ def _assertion_2_rfc2119_structural(rfc: str) -> tuple[bool, str]:
     return True, ""
 
 
-def _assertion_3_rubric(gherkin: str, client: httpx.Client) -> tuple[bool, str]:
+def _assertion_3_rubric(
+    gherkin: str,
+    client: httpx.Client,
+    trace_id: str | None = None,
+    parent_observation_id: str | None = None,
+) -> tuple[bool, str]:
     """LLM rubric check via cloud/claude-sonnet."""
     resp = client.post(
         f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
@@ -78,6 +83,8 @@ def _assertion_3_rubric(gherkin: str, client: httpx.Client) -> tuple[bool, str]:
             "metadata": {
                 "generation_name": "cai-gate-rubric-call",
                 "tags": ["cai_gate", "norma"],
+                "trace_id": trace_id,
+                "parent_observation_id": parent_observation_id,
             },
         },
     )
@@ -130,7 +137,11 @@ def cai_gate_node(state: NormaState) -> NormaState:
 
         # Assertion 3 — LLM rubric on Gherkin
         with httpx.Client(timeout=60.0) as client:
-            ok, msg = _assertion_3_rubric(gherkin, client)
+            ok, msg = _assertion_3_rubric(
+                gherkin, client,
+                trace_id=langfuse.get_current_trace_id(),
+                parent_observation_id=langfuse.get_current_observation_id(),
+            )
         if not ok:
             return _fail(f"Coverage rubric failed: {msg}", 3)
 

@@ -43,7 +43,11 @@ def _assertion_1_env_plausibility(state: NormaState) -> tuple[bool, str]:
 
 
 def _assertion_2_gherkin_coverage(
-    normalised: str, gherkin: str, client: httpx.Client
+    normalised: str,
+    gherkin: str,
+    client: httpx.Client,
+    trace_id: str | None = None,
+    parent_observation_id: str | None = None,
 ) -> tuple[bool, str]:
     """LLM rubric: does Gherkin cover all behaviours in the normalised requirement?"""
     user_msg = (
@@ -64,6 +68,8 @@ def _assertion_2_gherkin_coverage(
             "metadata": {
                 "generation_name": "stage1-gate-rubric-call",
                 "tags": ["stage1_gate", "norma"],
+                "trace_id": trace_id,
+                "parent_observation_id": parent_observation_id,
             },
         },
     )
@@ -101,7 +107,11 @@ def stage1_gate_node(state: NormaState) -> NormaState:
 
         # Assertion 2 — Gherkin business coverage (LLM)
         with httpx.Client(timeout=60.0) as client:
-            ok, msg = _assertion_2_gherkin_coverage(normalised, gherkin, client)
+            ok, msg = _assertion_2_gherkin_coverage(
+                normalised, gherkin, client,
+                trace_id=langfuse.get_current_trace_id(),
+                parent_observation_id=langfuse.get_current_observation_id(),
+            )
         if not ok:
             feedback = f"Gherkin coverage check failed: {msg}"
             span.update(output={"stage1_passed": False, "feedback": feedback, "assertion": 2})
