@@ -22,11 +22,15 @@ from norma.graph.state import NormaState
 MODEL = settings.NORMA_STAGE1_GATE_MODEL
 
 _RUBRIC_SYSTEM = (
-    "You are a strict QA gatekeeper.\n"
-    "Evaluate whether the Gherkin covers all key behaviours in the requirement.\n\n"
+    "You are a business analyst reviewing a Gherkin feature file against a requirement.\n"
+    "Decide whether the Gherkin captures all the NAMED FEATURES described in the requirement "
+    "at a high level. Do NOT require boundary/edge-case scenarios, implementation details, "
+    "or exhaustive examples — those belong in technical specs.\n\n"
+    "Key behaviours to look for: named user actions, named system responses, "
+    "named content types, and named error flows that the requirement explicitly states.\n\n"
     "Output ONLY one of these two forms — nothing else, no reasoning, no markdown:\n"
     "  PASS\n"
-    "  FAIL: <one sentence naming the missing behaviour(s)>\n"
+    "  FAIL: <one sentence naming which named feature is entirely absent from the Gherkin>\n"
 )
 
 

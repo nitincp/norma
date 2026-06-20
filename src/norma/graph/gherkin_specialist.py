@@ -42,7 +42,9 @@ _CRISPE = CRISPE(
         "  - Examples tables: ≤ 4 rows including header\n"
         "  - No nested rules blocks\n"
         "  - No comments or tags\n"
-        "  - Total file length: under 60 lines"
+        "  - Total file length: under 80 lines\n"
+        "Coverage requirement: every distinct behaviour in the requirement MUST appear "
+        "as at least one scenario step. Do not merge unrelated behaviours into one step."
     ),
     personality="Economical and precise — every line must earn its place. No padding.",
     experiment=(
@@ -79,7 +81,7 @@ def gherkin_specialist_node(state: NormaState) -> NormaState:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": normalised},
                     ],
-                    "max_tokens": 800,
+                    "max_tokens": 1200,
                     "temperature": 0.2,
                     "metadata": {
                         "generation_name": "gherkin-specialist-llm-call",

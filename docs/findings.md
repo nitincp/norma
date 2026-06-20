@@ -5,6 +5,36 @@ The format: what happened, what the numbers were, what it means going forward.
 
 ---
 
+## 2026-06-20 — A/B test: sonnet vs gemini-flash vs grok-3-mini
+
+**Context:** `scripts/run_ab_test.py` — three sequential runs of the full two-stage pipeline, each with all NORMA_*_MODEL env vars set to the target model. Same requirement (REQ-001).
+
+**Results summary:**
+
+| Variant | Model | P1 | P2 | Wall time | Specialists | Env selected |
+|---|---|---|---|---|---|---|
+| sonnet | cloud/claude-sonnet | PASS | FAIL (2 revisions) | 103s | rfc2119, openapi, jsonschema, c4 | Node.js 22 / Next.js 14 |
+| gemini | cloud/gemini-flash | PASS | FAIL (non-LLM) | 42s | rfc2119, openapi, json_schema | Python 3.12 / FastAPI |
+| grok | cloud/grok | PASS | FAIL (structural) | 69s | (none) | JavaScript (browser) / Vanilla JS |
+
+**Findings by variant:**
+
+**Sonnet** — strongest spec generation. Ran 4 specialists (most thorough advice). Stage 2 Gate found a real cross-specialist inconsistency: OpenAPI and JSON Schema defined the error response shape differently (`error.message` / `error.retryable` in OpenAPI vs flat structure in JSON Schema). Gate exhausted revision limit because Technical Gherkin couldn't reconcile the inconsistency without the specs being fixed first. The gate correctly identified a real spec quality issue.
+
+**Gemini** — fastest overall (42s). Generated valid Gherkin and valid RFC/OpenAPI/JSON Schema artefacts. Failed on a non-LLM assertion: RFC 2119 artefact did not include the `# Constraints` heading. Instruction-following gap on a format constraint that Claude follows reliably. No revision loop entered — failed on the first structural check.
+
+**Grok** — slowest P1 (48s, Environment Advisor took unusually long). Environment Advisor selected "JavaScript (browser) / Vanilla JS" rank 1 — questionable for a greeting app that fetches external APIs. Spec Advisor produced no specialists (`spec_advice: []`) — JSON parse failure suspected (same truncation bug as before; grok-3-mini may produce more verbose output). Technical Gherkin node ran with no spec artefacts, produced output with no `Scenario` blocks — structural failure on the first assertion.
+
+**Prompt fixes applied during this session (all variants affected):**
+1. Business Gherkin `max_tokens` 800 → 1200 and line limit 60 → 80: the 800-token ceiling was crowding out required scenarios; all 3 models dropped at least one named feature.
+2. Stage 1 Gate rubric: changed persona from "strict QA gatekeeper" to "business analyst"; added explicit instruction that boundary/edge-case testing is NOT required. The "strict" framing caused all 3 models to fail P1 on the first attempt by demanding exhaustive test coverage rather than named-feature coverage.
+
+**Cross-specialist consistency** — new gap identified: Spec Advisor runs specialists in parallel with no shared schema contract for shared types. When OpenAPI and JSON Schema both define an `ErrorResponse`, they can independently produce inconsistent shapes. This is a pipeline design gap, not a model quality gap.
+
+**Verdict:** Sonnet is the only model that produced all specialists correctly and found real spec issues. Gemini is viable for P1 and shows potential for cost reduction once the RFC heading instruction is fixed. Grok is not yet viable for this pipeline — fails at Environment Advisor quality, Spec Advisor JSON output, and Technical Gherkin generation.
+
+---
+
 ## 2026-06-20 — REQ-004 second run (all fixes applied)
 
 **Context:** Full run after tightening Business Gherkin, reworking Technical Gherkin as standalone, updating Stage 2 Gate rubric, and adding dated output folders.
