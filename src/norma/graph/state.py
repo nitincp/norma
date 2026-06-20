@@ -35,6 +35,23 @@ class SpecRecommendation(TypedDict):
     statement: str
 
 
+class EnvironmentOption(TypedDict):
+    """
+    One ranked environment option produced by the Environment Advisor.
+
+    runtime         — e.g. "Python 3.12 + FastAPI"
+    framework       — primary framework / library
+    deployment      — deployment target (e.g. "Docker / AWS Lambda")
+    rationale       — why this option suits the requirement
+    rank            — 1 = most recommended
+    """
+    runtime: str
+    framework: str
+    deployment: str
+    rationale: str
+    rank: int
+
+
 class NormaState(TypedDict, total=False):
     # INTAKE
     raw_requirement: str
@@ -42,19 +59,33 @@ class NormaState(TypedDict, total=False):
     actors: list[str]
     external_deps: list[str]
 
-    # GHERKIN SPECIALIST (permanent)
-    gherkin_content: NotRequired[str]
+    # PIPELINE 1 — GHERKIN SPECIALIST (permanent)
+    gherkin_content: NotRequired[str]   # alias: gherkin_business after Stage 1 Gate
+    gherkin_business: NotRequired[str]  # immutable after Stage 1 Gate sign-off
 
-    # SPEC ADVISOR (permanent)
+    # PIPELINE 1 — ENVIRONMENT ADVISOR
+    environment_options: NotRequired[list[EnvironmentOption]]
+
+    # PIPELINE 1 → PIPELINE 2 boundary (set by human / harness)
+    selected_environment: NotRequired[EnvironmentOption]
+
+    # PIPELINE 1 — STAGE 1 GATE
+    stage1_passed: NotRequired[bool]
+    stage1_feedback: NotRequired[str]
+
+    # PIPELINE 2 — SPEC ADVISOR (permanent)
     spec_advice: NotRequired[list[SpecRecommendation]]
 
-    # SPEC SPECIALIST shell — set by Send per dispatch, consumed by shell node
+    # PIPELINE 2 — SPEC SPECIALIST shell — set by Send per dispatch
     current_recommendation: NotRequired[SpecRecommendation]
 
-    # SPEC SPECIALIST artefacts — Annotated so parallel specialist nodes merge cleanly
+    # PIPELINE 2 — SPEC SPECIALIST artefacts — merged from parallel specialist nodes
     spec_artefacts: NotRequired[Annotated[dict[str, str], _merge_dicts]]
 
-    # CAI GATE
+    # PIPELINE 2 — TECHNICAL GHERKIN SPECIALIST
+    gherkin_technical: NotRequired[str]
+
+    # PIPELINE 2 — STAGE 2 GATE (replaces CAI gate in two-stage mode)
     gate_passed: NotRequired[bool]
     gate_feedback: NotRequired[str]
     revision_count: NotRequired[int]
