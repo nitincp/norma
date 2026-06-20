@@ -61,6 +61,18 @@ This is the integration test for Norma's spec quality. If the code assistant nee
 
 ---
 
+## Token Budget Discipline
+
+`max_tokens` per node is a hard ceiling, not a dial.
+
+- Set the ceiling to match what a minimal correct output should need.
+- If output truncates, tighten the prompt (add a word/line limit, narrow scope) — do not raise the ceiling.
+- Token costs compound: a node that is verbose on a simple app will be unmanageable on a complex one.
+
+**Rule:** prompt controls verbosity; `max_tokens` enforces the contract.
+
+---
+
 ## PEF Refinement Loop
 
 All prompts are PEF compositions (COSTAR, CRISPE, CAI). Refinements follow this pattern:

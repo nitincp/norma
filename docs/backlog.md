@@ -76,8 +76,9 @@ Pipeline closed on first gate attempt. Boring in the right way. Notes:
 
 ## REQ-002 — NFR Specialist Node
 
-**Status:** Queued
+**Status:** Done
 **Added:** 2026-06-19
+**Closed:** 2026-06-19
 
 **Signal:** REQ-001 build evaluation (Claude Code vs Gemini) revealed that the Gherkin spec alone is insufficient context for an assistant to build correctly without guessing. Claude Code succeeded by making its own assumptions (tech stack, API endpoints, timeout values, retry limits). Gemini failed entirely. The missing layer is non-functional requirements.
 
@@ -96,6 +97,25 @@ INTAKE → GHERKIN SPECIALIST → NFR SPECIALIST → CAI GATE → spec bundle (G
 ```
 
 **Done when:** A spec bundle containing both a `.feature` file and an NFR doc can be handed to any code assistant and produce a correct, consistent implementation without guessing.
+
+---
+
+### Tasks
+
+#### T1 — NFR SPECIALIST NODE ✓
+- [x] Add `nfr_content: NotRequired[str]` to `NormaState`
+- [x] Add `NORMA_NFR_MODEL` env var to `settings.py` (default: `cloud/claude-sonnet`)
+- [x] Create `src/norma/graph/nfr_specialist.py` — CRISPE-prompted, reads `normalised_requirement` + `gherkin_content`, emits structured NFR doc with five mandatory sections
+- [x] Wire into graph: `gherkin_specialist → nfr_specialist → cai_gate`
+- [x] Add Assertion 2 (NFR structural check) to CAI gate — non-LLM, verifies all 5 headings present
+- [x] Rename old Assertion 2 → Assertion 3 in CAI gate
+- [x] Unit tests: `tests/test_nfr_specialist.py` — 5 tests, all pass
+
+#### T2 — SMOKE TEST ✓
+- [x] Add `scripts/run_nfr_specialist.py` standalone smoke test — PASS
+- [x] End-to-end pipeline run with REQ-001 input; verify both `gherkin_content` and `nfr_content` in final state — PASS, gate on first attempt
+- [x] Validate NFR doc covers all 5 categories for the greeting app domain — all 5 sections present
+- [x] Artefacts written to `output/req_001.nfr.md` alongside `output/req_001.feature`
 
 ---
 

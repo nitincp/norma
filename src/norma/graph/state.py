@@ -15,7 +15,10 @@ class NormaState(TypedDict, total=False):
     # T2 — GHERKIN SPECIALIST
     gherkin_content: NotRequired[str]
 
-    # T3 — CAI GATE
+    # T3 — NFR SPECIALIST
+    nfr_content: NotRequired[str]
+
+    # T4 — CAI GATE
     gate_passed: NotRequired[bool]
     gate_feedback: NotRequired[str]
     revision_count: NotRequired[int]

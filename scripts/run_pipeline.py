@@ -1,8 +1,10 @@
 """
 End-to-end pipeline smoke test — REQ-001.
 
-Runs intake → gherkin_specialist → cai_gate and prints the final state.
-On success, writes the validated .feature file to output/req_001.feature.
+Runs intake → gherkin_specialist → nfr_specialist → cai_gate and prints the
+final state. On success, writes artefacts to output/:
+  - output/req_001.feature  (validated Gherkin)
+  - output/req_001.nfr.md   (NFR document)
 
 Usage:
     uv run python scripts/run_pipeline.py
@@ -26,6 +28,7 @@ def main() -> None:
     print(f"LANGFUSE_HOST       : {settings.LANGFUSE_HOST}")
     print(f"NORMA_DEFAULT_MODEL : {settings.NORMA_DEFAULT_MODEL}")
     print(f"NORMA_GHERKIN_MODEL : {settings.NORMA_GHERKIN_MODEL}")
+    print(f"NORMA_NFR_MODEL     : {settings.NORMA_NFR_MODEL}")
     print(f"NORMA_CAI_GATE_MODEL: {settings.NORMA_CAI_GATE_MODEL}")
     print()
 
@@ -55,13 +58,27 @@ def main() -> None:
     print()
 
     gherkin = result.get("gherkin_content", "")
+    nfr = result.get("nfr_content", "")
+
     if result.get("gate_passed"):
-        out_path = Path("output/req_001.feature")
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(gherkin)
-        print(f"PASS — validated .feature written to {out_path}")
+        out_dir = Path("output")
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        feature_path = out_dir / "req_001.feature"
+        feature_path.write_text(gherkin)
+
+        nfr_path = out_dir / "req_001.nfr.md"
+        nfr_path.write_text(nfr)
+
+        print(f"PASS — artefacts written:")
+        print(f"  {feature_path}")
+        print(f"  {nfr_path}")
         print()
+        print("── GHERKIN ───────────────────────────────────────────────────────────")
         print(gherkin)
+        print()
+        print("── NFR DOCUMENT ──────────────────────────────────────────────────────")
+        print(nfr)
     else:
         print("HALT — gate did not pass after max revisions", file=sys.stderr)
         print()
