@@ -79,8 +79,16 @@ When a node produces wrong output, identify the single CRISPE field responsible 
 
 ---
 
-## Principle 6 — Model-specific augmentation via quirk register (planned)
+## Principle 6 — Quirk discovery via reverse prompting
 
-Once a model's response pattern is characterised (via reverse prompting or observation), register the delta as a `MODEL_TWEAKS` entry keyed by `(model_alias, node_name)` → CRISPE field override. Applied at runtime on top of the canonical base CRISPE. The base prompt stays model-agnostic; quirks are explicit, localised, and version-controlled separately.
+When a node fails a structural assertion and single-field PEF edits don't close the gap, feed the desired output (a Sonnet PASS artefact) to the failing model and ask: *"What system prompt would reliably produce this output from you? Be specific about format constraints, persona, and output discipline."* Apply the suggested delta as a surgical CRISPE field edit and re-run. Cap at `MAX_QUIRK_CYCLES = 3`. Outcomes are binary: **pass** (done, discard the cycle log) or **quirk found** (characterised failure mode + the CRISPE delta that addresses it, recorded in `findings.md`).
 
-See REQ-005 for the reverse prompting workflow used to discover quirks.
+This process is not yet implemented as a script — it is currently a manual trace-inspection exercise.
+
+---
+
+## Principle 7 — Quirk registry and injection (planned)
+
+Characterised quirks from Principle 6 are stored in a **quirk registry** (`findings.md` until formalised): per-model, per-node entries of the form `(model_alias, node_name) → CRISPE field override`. At runtime, a `MODEL_TWEAKS` dict applies these overrides on top of the canonical base CRISPE before the LLM call. The base prompt stays model-agnostic; model-specific deltas are explicit, localised, and version-controlled separately.
+
+Neither the registry store nor the runtime injection is implemented yet.
