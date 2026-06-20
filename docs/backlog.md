@@ -237,6 +237,112 @@ Two-stage pipeline runs end-to-end. Business layer (P1) and technical layer (P2)
 
 ---
 
+## REQ-005 — Node-level Quality: Granular Execution, Cross-Model Consistency, Model Quirk Discovery
+
+**Status:** Planned
+**Added:** 2026-06-20
+
+**Goal:** Before scaling the pipeline to more requirements or more models, establish a respectable quality baseline at the individual node level. Three interlocking problems to solve.
+
+---
+
+### Problem 1 — Granular execution and per-node iteration
+
+**Context:** `run_full.py` is useful for end-to-end validation but too coarse for refinement. When Stage 2 Gate fails, we have no way to re-run just the Technical Gherkin Specialist with a tweaked prompt, or replay just the Spec Advisor against a fixed input without re-running the whole pipeline. The cost and latency of a full run ($0.127, ~100s) makes tight prompt iteration loops impractical.
+
+**What we need:**
+- A way to run any single node against a saved state snapshot (JSON in/out)
+- A way to re-run Pipeline 2 from a saved Pipeline 1 output without re-running P1
+- Node-level pass/fail visibility — not just gate-level
+- Saved artefacts from each run as replayable fixtures for node tests
+
+**Design direction:**
+- `scripts/run_node.py <node_name> <state_snapshot.json>` — deserialises state, runs one node, prints output diff
+- Pipeline 1 output (`run_summary.json` + artefacts) already exists as a natural checkpoint — Pipeline 2 entry point should be a first-class script param
+- Unit test fixtures: save representative node inputs/outputs to `tests/fixtures/` from real runs; use them to write deterministic node-level tests
+
+---
+
+### Problem 2 — Cross-specialist shared type consistency
+
+**Context:** OpenAPI and JSON Schema specialists run in parallel with no shared contract. When both define the same type (e.g. `ErrorResponse`), they independently produce inconsistent field names. Stage 2 Gate correctly catches this — but the pipeline has no mechanism to prevent it.
+
+**Root cause:** Parallel `Send()` fan-out means each specialist sees only its own recommendation, not what other specialists are producing.
+
+**Options to evaluate:**
+1. **Sequential with state threading** — run OpenAPI first; pass its schema definitions as context to JSON Schema specialist. Breaks parallelism but eliminates the inconsistency at source.
+2. **Shared type contract from Spec Advisor** — Spec Advisor extracts shared types upfront and includes them in every specialist's `insight` field as a pre-agreed contract. Specialists reference it, not define it.
+3. **Post-merge reconciliation node** — after all specialists complete, a Reconciler node checks for type conflicts and patches the inconsistent artefact. Adds latency but preserves parallelism.
+
+Option 2 is the most architecturally clean — it keeps parallelism and fixes the root cause (no shared contract) rather than patching the symptom.
+
+---
+
+### Problem 3 — Cross-model consistency and model quirk discovery
+
+**Context:** A/B test revealed model-specific failure modes:
+- **Gemini** — ignores `# Constraints` heading requirement in RFC 2119 artefact (non-LLM assertion fails)
+- **Grok** — Spec Advisor JSON output silently empty (truncation + parse failure); Technical Gherkin produces no `Scenario` blocks; Environment Advisor selects unrealistic rank-1 option (browser/Vanilla JS for an API-calling app)
+- **Sonnet** — only model that reliably follows all structural format constraints
+
+**Goal:** Make PEF compositions robust enough that all three cloud models produce gate-passing output without model-specific prompt branches.
+
+**Reverse prompting technique (to explore):**
+The idea: given a *target output* (a good artefact we already have), ask the same model — "given this output, what system prompt would you suggest to reliably produce it?"
+
+This is prompt inversion. Instead of iterating blind, we let the model tell us what instruction framing it responds to. Workflow:
+1. Take a PASS artefact from a Sonnet run (ground truth)
+2. Feed it to Gemini/Grok with prompt: *"This is the desired output for [node]. What system prompt would reliably produce this output from you? Be specific about format constraints, persona, and output discipline instructions you would follow."*
+3. Compare suggested prompt against current CRISPE composition — identify the delta
+4. Apply the delta as a surgical PEF field edit (not a full rewrite)
+5. Re-run the failing node against the same input and verify gate passes
+
+This keeps PEF as the single source of truth while using each model's self-knowledge to close the gap.
+
+**Model quirk register** (known gaps to fix):
+| Model | Node | Symptom | Hypothesis |
+|---|---|---|---|
+| gemini-flash | spec_specialist (rfc2119) | Missing `# Constraints` heading | Needs explicit heading in `statement` field example |
+| grok-3-mini | spec_advisor | Empty JSON output | Token budget too tight; or JSON schema needs stronger `experiment` field |
+| grok-3-mini | technical_gherkin_specialist | No `Scenario` blocks | Likely cascades from empty spec_artefacts; retest with valid artefacts |
+| grok-3-mini | environment_advisor | Unrealistic rank-1 selection | CRISPE `insight` needs stronger constraint on what "viable" means for the requirement type |
+
+---
+
+### Tasks
+
+#### T1 — Granular execution: node runner script
+- [ ] `scripts/run_node.py <node> <snapshot.json>` — load state, run node, print diff, save output snapshot
+- [ ] `scripts/run_pipeline2.py` already takes a P1 run dir — document and test this as the standard iteration path for P2 refinement
+- [ ] Save representative state snapshots to `tests/fixtures/` from the latest clean run
+
+#### T2 — Per-node unit tests from fixtures
+- [ ] `tests/test_node_intake.py`, `test_node_gherkin_specialist.py` etc. — load fixture, run node, assert key state keys present and non-empty
+- [ ] Gate nodes: assert PASS/FAIL verdict parsing, not LLM content
+- [ ] Mark LLM-dependent tests with `@pytest.mark.llm` so they can be skipped in fast CI
+
+#### T3 — Spec Advisor shared type contract
+- [ ] Audit Spec Advisor output: add `shared_types[]` field to `SpecAdvice` — a list of type names that multiple specialists will reference
+- [ ] Pass `shared_types` into each specialist's `insight` field: "The following shared types are pre-agreed: {shared_types}. Use these exact names and shapes."
+- [ ] Re-run with rfc2119 + openapi + jsonschema; verify Stage 2 Gate passes on `ErrorResponse` consistency
+
+#### T4 — Model quirk: Gemini RFC 2119 heading
+- [ ] Apply reverse prompting: feed Sonnet's RFC 2119 output to Gemini, ask for prompt suggestion
+- [ ] Apply delta to CRISPE `statement` field in Spec Advisor recommendation for rfc2119
+- [ ] Re-run AB test Gemini variant; verify non-LLM assertion passes
+
+#### T5 — Model quirk: Grok Spec Advisor JSON
+- [ ] Apply reverse prompting: feed Sonnet's Spec Advisor JSON output to Grok, ask for prompt suggestion
+- [ ] Tighten `experiment` field or add explicit JSON schema example to `statement`
+- [ ] Re-run Grok variant; verify `spec_advice` is non-empty
+
+#### T6 — AB test re-run with fixes
+- [ ] Re-run `scripts/run_ab_test.py` with all three models after T3–T5 fixes
+- [ ] Target: all three models pass Stage 1 Gate; at least Sonnet and Gemini pass Stage 2 Gate
+- [ ] Record cost per model per node in findings.md
+
+---
+
 ## REQ-003 — Spec Advisor + Dynamic Specialist Pipeline
 
 **Status:** Done
