@@ -5,6 +5,43 @@ The format: what happened, what the numbers were, what it means going forward.
 
 ---
 
+## 2026-06-20 — REQ-004 second run (all fixes applied)
+
+**Context:** Full run after tightening Business Gherkin, reworking Technical Gherkin as standalone, updating Stage 2 Gate rubric, and adding dated output folders.
+
+**Result:** PASS/PASS — 61.4s total (P1: 18.4s, P2: 43.0s). Both gates passed on first attempt with zero revisions.
+
+**Specialists selected:** `rfc2119`, `c4`, `adr` (no OpenAPI — Spec Advisor read the CLI environment signal and correctly excluded HTTP contracts for a terminal app).
+
+**Environment selected:** Python 3.12 / Click (CLI), rank 1. Appropriate for a single-user greeting app with no web layer.
+
+**Stage 1 Gate fix:** First run of this session failed because the LLM produced a verbose markdown checklist instead of the required `PASS` / `FAIL: <one sentence>`. Root cause: system prompt said "No other output" but did not explicitly forbid reasoning. Fix: replaced with "no reasoning, no markdown" phrasing; bumped `max_tokens` 256 → 512 to avoid truncation of legitimate FAIL explanations.
+
+**Artefacts:** `req_001.feature`, `req_001.environments.json`, `req_001.technical.feature`, `req_001.rfc2119.md`, `req_001.c4.md`, `req_001.adr.md` — all written to `output/2026-06-20/093244/`.
+
+---
+
+## 2026-06-20 — REQ-004 first two-stage run
+
+**Context:** First end-to-end run of Pipeline 1 + Pipeline 2 via `scripts/run_full.py`.
+
+**Pipeline 1 result:** PASS. Stage 1 Gate passed on first attempt.
+- Environment Advisor produced 3 options (Node.js 22/Express rank 1, Python 3.12/FastAPI rank 2, Node.js 22/Next.js rank 3). Rationale was requirement-specific and correct.
+- Stage 1 Gate: Gherkin business coverage rubric → PASS.
+
+**Pipeline 2 result:** PASS. Stage 2 Gate passed on first attempt.
+- Spec Advisor bug found and fixed (see below). After fix, specialists expected: RFC 2119 + OpenAPI.
+- Technical Gherkin Specialist produced 13 344 chars of enriched Gherkin.
+- Stage 2 Gate: structural checks + coverage rubric → PASS.
+
+**Bug: Spec Advisor silently dropped all recommendations (specialist_count: 0).**
+- Root cause: LLM output for 2 specialists with verbose `requirement_segments` + `insight` + `statement` fields exceeded `max_tokens: 1500`, producing truncated invalid JSON. `_parse_advice` silently returns `[]` on JSON parse failure.
+- Fix: tightened field-length constraints in the CRISPE `statement` field — each of `rationale`, `requirement_segments`, `role`, `insight`, `statement` now has an explicit line/sentence limit. The example in the prompt was updated to model concise output.
+- Do NOT raise `max_tokens` — fix the prompt instead (per project discipline).
+- Downstream effect: Technical Gherkin Specialist ran with no spec artefacts (`gherkin-only` mode), so `gherkin_technical` was enriched only from business Gherkin. Re-run needed to validate the full specialist chain.
+
+---
+
 ## 2026-06-16 — Full stack connectivity verified
 
 **Langfuse v3** (self-hosted) and **LiteLLM gateway** pass their full connectivity test suites (`scripts/test_langfuse.py`, `scripts/test_litellm.py`):

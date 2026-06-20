@@ -23,23 +23,31 @@ _CRISPE = CRISPE(
     ),
     role=(
         "You convert normalised software requirements into syntactically valid Gherkin "
-        "Feature files that a test automation framework can execute directly."
+        "Feature files that a business stakeholder can read and sign off on. "
+        "No technical implementation detail — behaviour only."
     ),
     insight=(
-        "The requirement describes a conversational app that greets the user based on time "
-        "of day and lets them choose between a Quote of the Day or a Joke of the Day. "
-        "Key paths: correct greeting, two content choices, graceful error handling."
+        "Focus on the minimum set of scenarios that covers the requirement completely:\n"
+        "  - One Scenario Outline per parameterised behaviour (e.g. time-band → greeting)\n"
+        "  - One Scenario per distinct happy path\n"
+        "  - One Scenario per error/failure path\n"
+        "Do not duplicate coverage. Background is only needed when ≥3 scenarios share "
+        "the same Given steps."
     ),
     statement=(
-        "Generate a complete Gherkin Feature file for the given normalised requirement. "
-        "Include: Feature header, Background (if needed), and Scenario or Scenario Outline "
-        "blocks covering the happy paths and at least one error path. "
-        "Use concrete Examples tables for parameterised scenarios."
+        "Generate a Gherkin Feature file for the given requirement.\n"
+        "Strict limits:\n"
+        "  - At most 6 scenarios or scenario outlines total\n"
+        "  - Each step (Given/When/Then/And) ≤ 15 words\n"
+        "  - Examples tables: ≤ 4 rows including header\n"
+        "  - No nested rules blocks\n"
+        "  - No comments or tags\n"
+        "  - Total file length: under 60 lines"
     ),
-    personality="Precise, thorough, and idiomatic — no prose, only valid Gherkin syntax.",
+    personality="Economical and precise — every line must earn its place. No padding.",
     experiment=(
         "Output ONLY the raw .feature file content. "
-        "Do not wrap it in markdown fences or add any explanation. "
+        "Do not wrap in markdown fences or add explanation. "
         "Start with the 'Feature:' keyword on the first line."
     ),
 )
@@ -71,7 +79,7 @@ def gherkin_specialist_node(state: NormaState) -> NormaState:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": normalised},
                     ],
-                    "max_tokens": 2048,
+                    "max_tokens": 800,
                     "temperature": 0.2,
                     "metadata": {
                         "generation_name": "gherkin-specialist-llm-call",
