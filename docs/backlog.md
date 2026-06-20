@@ -333,18 +333,24 @@ This keeps PEF as the single source of truth while using each model's self-knowl
 - **Must run before T4/T5/T3:** locks in known-good baselines before any prompt or schema changes; regressions surface immediately
 - **Depends on:** T1 (fixtures come from node runner runs)
 
-#### T3 — Model quirk: Gemini RFC 2119 heading
-- [ ] Step 1: add one-shot example to `statement` field in rfc2119 specialist CRISPE showing `# Constraints` heading — run Gemini variant via `run_node.py`, check non-LLM assertion
-- [ ] Step 2 (if still failing): reverse prompting loop (max 3 cycles) — feed Sonnet PASS artefact to Gemini, apply suggested delta, re-run, record quirk_log
-- [ ] Verify non-LLM assertion passes on Gemini variant
-- **Do this before T4:** simplest quirk (non-LLM assertion, clear fix path); validates the one-shot technique cheaply before applying it to harder cases
+#### T3 — Self-anchoring one-shot in Spec Specialist
+- [ ] Add two-phase instruction to `statement` field in `spec_specialist.py` CRISPE:
+  - Step 1: generate a 4–6 line canonical example of the required spec type (structure, headings, keyword style)
+  - Step 2: using that example as scaffold, write the full artefact for the requirement segments
+- [ ] This replaces any static example registry — the model surfaces its own format knowledge before applying it; works for any dynamically recommended spec type
+- [ ] Run Gemini variant via `run_node.py` on rfc2119 — verify non-LLM `# Constraints` assertion passes
+- [ ] If still failing: reverse prompting loop (max 3 cycles), record quirk_log
+- **Rationale:** model cannot "forget" a structural requirement it just wrote in its own example; self-anchoring works for any spec type without pre-knowledge of what the Advisor will recommend
 - **Depends on:** T1
 
-#### T4 — Model quirk: Grok Spec Advisor JSON
-- [ ] Step 1: add one-shot example JSON to `statement` field in spec_advisor CRISPE — run Grok variant via `run_node.py`, check `spec_advice` non-empty
-- [ ] Step 2 (if still failing): reverse prompting loop (max 3 cycles) — feed Sonnet PASS JSON to Grok, apply suggested delta, re-run, record quirk_log
-- [ ] Verify `spec_advice` non-empty on Grok variant
-- **Depends on:** T1, T3 (technique validated by T3 first)
+#### T4 — Self-anchoring one-shot in Spec Advisor
+- [ ] Apply same two-phase technique to `spec_advisor.py` CRISPE `statement`:
+  - Step 1: generate a 2–3 item example of the required JSON output structure
+  - Step 2: produce the actual advice JSON for the requirement
+- [ ] Run Grok variant via `run_node.py` — verify `spec_advice` non-empty and valid JSON
+- [ ] If still failing: reverse prompting loop (max 3 cycles), record quirk_log
+- **Rationale:** Grok JSON truncation/parse failure is partly an anchoring problem — generating the schema skeleton first reinforces the output contract before the model commits to content
+- **Depends on:** T1, T3 (technique validated on Specialist first)
 
 #### T5 — Spec Advisor shared type contract
 - [ ] Audit Spec Advisor output: add `shared_types[]` field to `SpecAdvice` — a list of type names that multiple specialists will reference
