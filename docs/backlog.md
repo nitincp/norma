@@ -211,6 +211,14 @@ Pipeline 2 — Technical Layer
 - [x] Wire Pipeline 2: `spec_advisor → Send(spec_specialist) → technical_gherkin_specialist → stage2_gate`
 - [x] `scripts/run_pipeline2.py` smoke test — auto-discovers latest P1 run folder
 
+#### T7 — Observability: cost tracking + trace linking ✓
+- [x] Root-caused Langfuse $0 cost: model alias names don't match Langfuse pricing catalog
+- [x] Registered custom model price definitions in Langfuse via `/api/public/models` for all three `cloud/*` aliases
+- [x] Added `trace_id` + `parent_observation_id` to LiteLLM `metadata` in all 9 node files so LiteLLM OTel spans nest under Norma spans
+- [x] Added `model_info.base_model` to each entry in `docker/litellm-config.yaml`
+- [x] Removed dead `local/qwen2.5-0.5b` entry and its fallback rule from `litellm-config.yaml`
+- [x] Langfuse MCP credentials configured in `~/.claude/settings.json` (native HTTP Basic Auth)
+
 #### T6 — End-to-end two-stage run ✓
 - [x] `scripts/run_full.py` — runs Pipeline 1, auto-selects rank-1 environment, invokes Pipeline 2
 - [x] Artefacts written to `output/YYYY-MM-DD/HHMMSS/` with `run_summary.json`
@@ -225,7 +233,7 @@ Two-stage pipeline runs end-to-end. Business layer (P1) and technical layer (P2)
 - Business Gherkin tightened: ≤6 scenarios, steps ≤15 words, max_tokens 2048→800.
 - Technical Gherkin is a standalone `@technical`-only file; business Gherkin is immutable after Stage 1 Gate.
 - All scripts output to dated folders (`output/YYYY-MM-DD/HHMMSS/`) with `run_summary.json`.
-- Cost per full run: ~$0.05–$0.08 (6 nodes, all `cloud/claude-sonnet`).
+- Cost per full run: ~$0.127 (cloud/claude-sonnet, 4 specialists: rfc2119 + openapi + jsonschema + c4; see findings.md for per-node breakdown).
 
 ---
 

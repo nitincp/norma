@@ -5,6 +5,44 @@ The format: what happened, what the numbers were, what it means going forward.
 
 ---
 
+## 2026-06-20 — Langfuse cost tracking + observability fixes
+
+**Context:** After the A/B test, Langfuse was showing $0 cost for all traces despite correct token usage counts. Also, LiteLLM-generated OTel spans were appearing as disconnected root traces rather than nested under their Norma node spans.
+
+**Problem 1 — Zero cost in Langfuse:**
+- Root cause: Langfuse's pricing catalog has no entry for the `cloud/*` alias names LiteLLM sends. Token usage was recorded correctly (e.g. 3528 in / 601 out) but cost was $0 because no price row matched `cloud/claude-sonnet`.
+- Adding `model_info.base_model` to `litellm-config.yaml` did NOT fix it — LiteLLM still sends the alias name in OTel telemetry regardless.
+- Fix: registered custom model price definitions in Langfuse via `POST /api/public/models` for all three aliases:
+  - `cloud/claude-sonnet`: $3/M in, $15/M out, tokenizer=claude
+  - `cloud/gemini-flash`: $0.10/M in, $0.40/M out, tokenizer=openai
+  - `cloud/grok`: $0.30/M in, $0.50/M out, tokenizer=openai
+- After fix, costs appear correctly per generation observation.
+
+**Problem 2 — Disconnected LiteLLM OTel traces:**
+- LiteLLM's `langfuse_otel` callback creates its own root trace per LLM call (e.g. `gherkin-specialist-llm-call`), separate from the Norma node spans.
+- Fix: added `trace_id` and `parent_observation_id` to the `metadata` dict of every LiteLLM request across all 9 node files. LiteLLM uses these to nest its OTel observation under the correct Norma span.
+- All nodes updated: intake, gherkin_specialist, environment_advisor, spec_advisor, spec_specialist, technical_gherkin_specialist, stage1_gate, stage2_gate, cai_gate.
+
+**Confirmed cost for `cloud/claude-sonnet` full pipeline run (rfc2119 + openapi + jsonschema + c4):**
+
+| Node | Input tok | Output tok | Cost |
+|---|---:|---:|---:|
+| spec-advisor | 1,921 | 1,442 | $0.0274 |
+| technical-gherkin | 4,116 | 652 | $0.0221 |
+| spec-specialist-openapi | 483 | 1,200 | $0.0195 |
+| spec-specialist-c4 | 481 | 781 | $0.0132 |
+| spec-specialist-rfc2119 | 481 | 607 | $0.0106 |
+| spec-specialist-jsonschema | 471 | 593 | $0.0103 |
+| gherkin-specialist | 551 | 443 | $0.0083 |
+| environment-advisor | 625 | 402 | $0.0079 |
+| intake | 232 | 442 | $0.0073 |
+| **TOTAL** | | | **$0.1265** |
+
+**Local model removal:**
+- `local/qwen2.5-0.5b` was still present in `docker/litellm-config.yaml` as a dead entry. The fallback rule `{ local/qwen2.5-0.5b: [cloud/claude-sonnet] }` was also present. Both removed. Pipeline is cloud-only; local model viability is tracked separately in the local model verdict finding below.
+
+---
+
 ## 2026-06-20 — A/B test: sonnet vs gemini-flash vs grok-3-mini
 
 **Context:** `scripts/run_ab_test.py` — three sequential runs of the full two-stage pipeline, each with all NORMA_*_MODEL env vars set to the target model. Same requirement (REQ-001).
