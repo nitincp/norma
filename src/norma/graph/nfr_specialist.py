@@ -117,7 +117,4 @@ def nfr_specialist_node(state: NormaState) -> NormaState:
 
     langfuse.flush()
 
-    return {
-        **state,
-        "nfr_content": nfr_content,
-    }
+    return {"nfr_content": nfr_content}

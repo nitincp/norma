@@ -1,0 +1,144 @@
+"""
+Unit tests for the Spec Specialist shell node.
+
+Tests cover:
+- shell node produces artefact from current_recommendation CRISPE brief
+- artefact stored under correct artefact_key in spec_artefacts
+- existing spec_artefacts are preserved (fan-in accumulation)
+- markdown fences stripped from LLM output
+- _build_crispe assembles all six CRISPE fields correctly
+"""
+
+from unittest.mock import MagicMock, patch
+
+from norma.graph.spec_specialist import _build_crispe, spec_specialist_node
+from norma.graph.state import NormaState, SpecRecommendation
+
+_RFC2119_REC = SpecRecommendation(
+    language="RFC 2119",
+    artefact_key="rfc2119",
+    rationale="Requirement states SLA and failure constraints.",
+    depends_on=[],
+    requirement_segments=(
+        "The app must respond within 2 seconds. "
+        "When external APIs are unavailable the app must display a friendly fallback message."
+    ),
+    role="You are a standards author writing RFC 2119 / RFC 8174 conformance clauses.",
+    insight="Two MUST constraints: 2-second latency ceiling and mandatory fallback on API failure.",
+    statement=(
+        "Produce a document starting with '# Constraints'. "
+        "Group MUST/SHOULD/MAY statements under ## themed sub-sections. "
+        "One bullet per statement. Mark inferred constraints with [implied]."
+    ),
+)
+
+_RFC2119_CONTENT = (
+    "# Constraints\n\n"
+    "## Performance\n"
+    "- MUST respond within 2 seconds. [implied]\n\n"
+    "## Availability\n"
+    "- MUST NOT propagate upstream API errors to the user without a fallback message."
+)
+
+_BASE_STATE: NormaState = {
+    "raw_requirement": "Build a greeting app",
+    "normalised_requirement": "An app greeting users by time of day with content choices.",
+    "actors": ["user"],
+    "external_deps": [],
+    "current_recommendation": _RFC2119_REC,
+}
+
+
+def _mock_http(content: str) -> MagicMock:
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {"choices": [{"message": {"content": content}}]}
+    http = MagicMock()
+    http.__enter__ = MagicMock(return_value=http)
+    http.__exit__ = MagicMock(return_value=False)
+    http.post.return_value = resp
+    return http
+
+
+def _mock_langfuse() -> MagicMock:
+    span = MagicMock()
+    span.__enter__ = MagicMock(return_value=span)
+    span.__exit__ = MagicMock(return_value=False)
+    lf = MagicMock()
+    lf.start_as_current_observation.return_value = span
+    return lf
+
+
+# ── _build_crispe ──────────────────────────────────────────────────────────────
+
+def test_build_crispe_injects_recommendation_fields():
+    crispe = _build_crispe(_RFC2119_REC)
+    assert crispe.role == _RFC2119_REC["role"]
+    assert crispe.insight == _RFC2119_REC["insight"]
+    assert crispe.statement == _RFC2119_REC["statement"]
+
+
+def test_build_crispe_has_fixed_capacity_and_personality():
+    crispe = _build_crispe(_RFC2119_REC)
+    assert "specification author" in crispe.capacity
+    assert "Standards-conformant" in crispe.personality
+    assert "[implied]" in crispe.experiment
+
+
+def test_build_crispe_system_prompt_contains_all_fields():
+    prompt = _build_crispe(_RFC2119_REC).system_prompt()
+    for section in ("CAPACITY:", "ROLE:", "INSIGHT:", "STATEMENT:", "PERSONALITY:", "EXPERIMENT:"):
+        assert section in prompt
+
+
+# ── spec_specialist_node ───────────────────────────────────────────────────────
+
+@patch("norma.graph.spec_specialist.Langfuse")
+@patch("norma.graph.spec_specialist.httpx.Client")
+def test_shell_stores_artefact_under_correct_key(mock_client_cls, mock_langfuse_cls):
+    mock_client_cls.return_value = _mock_http(_RFC2119_CONTENT)
+    mock_langfuse_cls.return_value = _mock_langfuse()
+
+    result = spec_specialist_node(_BASE_STATE)
+
+    assert "spec_artefacts" in result
+    assert "rfc2119" in result["spec_artefacts"]
+    assert result["spec_artefacts"]["rfc2119"] == _RFC2119_CONTENT
+
+
+@patch("norma.graph.spec_specialist.Langfuse")
+@patch("norma.graph.spec_specialist.httpx.Client")
+def test_shell_returns_only_its_artefact_key(mock_client_cls, mock_langfuse_cls):
+    """Node returns only its own key — the graph reducer merges parallel results."""
+    mock_client_cls.return_value = _mock_http(_RFC2119_CONTENT)
+    mock_langfuse_cls.return_value = _mock_langfuse()
+
+    result = spec_specialist_node(_BASE_STATE)
+
+    assert result == {"spec_artefacts": {"rfc2119": _RFC2119_CONTENT}}
+
+
+@patch("norma.graph.spec_specialist.Langfuse")
+@patch("norma.graph.spec_specialist.httpx.Client")
+def test_shell_strips_markdown_fences(mock_client_cls, mock_langfuse_cls):
+    fenced = f"```markdown\n{_RFC2119_CONTENT}\n```"
+    mock_client_cls.return_value = _mock_http(fenced)
+    mock_langfuse_cls.return_value = _mock_langfuse()
+
+    result = spec_specialist_node(_BASE_STATE)
+
+    assert not result["spec_artefacts"]["rfc2119"].startswith("```")
+    assert "# Constraints" in result["spec_artefacts"]["rfc2119"]
+
+
+@patch("norma.graph.spec_specialist.Langfuse")
+@patch("norma.graph.spec_specialist.httpx.Client")
+def test_shell_includes_language_in_langfuse_span_name(mock_client_cls, mock_langfuse_cls):
+    mock_client_cls.return_value = _mock_http(_RFC2119_CONTENT)
+    mock_lf = _mock_langfuse()
+    mock_langfuse_cls.return_value = mock_lf
+
+    spec_specialist_node(_BASE_STATE)
+
+    call_kwargs = mock_lf.start_as_current_observation.call_args
+    assert call_kwargs.kwargs["name"] == "spec_specialist.rfc2119"

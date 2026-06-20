@@ -93,7 +93,4 @@ def gherkin_specialist_node(state: NormaState) -> NormaState:
 
     langfuse.flush()
 
-    return {
-        **state,
-        "gherkin_content": gherkin_content,
-    }
+    return {"gherkin_content": gherkin_content}

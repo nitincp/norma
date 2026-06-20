@@ -157,7 +157,6 @@ def intake_node(state: NormaState) -> NormaState:
     langfuse.flush()
 
     return {
-        **state,
         "normalised_requirement": normalised,
         "actors": actors,
         "external_deps": deps,
