@@ -324,31 +324,40 @@ This keeps PEF as the single source of truth while using each model's self-knowl
 - [ ] `scripts/run_node.py <node> <snapshot.json>` — load state, run node, print diff, save output snapshot
 - [ ] `scripts/run_pipeline2.py` already takes a P1 run dir — document and test this as the standard iteration path for P2 refinement
 - [ ] Save representative state snapshots to `tests/fixtures/` from the latest clean run
+- **Unlocks:** all subsequent tasks — targeted iteration without full pipeline cost
 
 #### T2 — Per-node unit tests from fixtures
 - [ ] `tests/test_node_intake.py`, `test_node_gherkin_specialist.py` etc. — load fixture, run node, assert key state keys present and non-empty
 - [ ] Gate nodes: assert PASS/FAIL verdict parsing, not LLM content
 - [ ] Mark LLM-dependent tests with `@pytest.mark.llm` so they can be skipped in fast CI
+- **Must run before T4/T5/T3:** locks in known-good baselines before any prompt or schema changes; regressions surface immediately
+- **Depends on:** T1 (fixtures come from node runner runs)
 
-#### T3 — Spec Advisor shared type contract
+#### T3 — Model quirk: Gemini RFC 2119 heading
+- [ ] Step 1: add one-shot example to `statement` field in rfc2119 specialist CRISPE showing `# Constraints` heading — run Gemini variant via `run_node.py`, check non-LLM assertion
+- [ ] Step 2 (if still failing): reverse prompting loop (max 3 cycles) — feed Sonnet PASS artefact to Gemini, apply suggested delta, re-run, record quirk_log
+- [ ] Verify non-LLM assertion passes on Gemini variant
+- **Do this before T4:** simplest quirk (non-LLM assertion, clear fix path); validates the one-shot technique cheaply before applying it to harder cases
+- **Depends on:** T1
+
+#### T4 — Model quirk: Grok Spec Advisor JSON
+- [ ] Step 1: add one-shot example JSON to `statement` field in spec_advisor CRISPE — run Grok variant via `run_node.py`, check `spec_advice` non-empty
+- [ ] Step 2 (if still failing): reverse prompting loop (max 3 cycles) — feed Sonnet PASS JSON to Grok, apply suggested delta, re-run, record quirk_log
+- [ ] Verify `spec_advice` non-empty on Grok variant
+- **Depends on:** T1, T3 (technique validated by T3 first)
+
+#### T5 — Spec Advisor shared type contract
 - [ ] Audit Spec Advisor output: add `shared_types[]` field to `SpecAdvice` — a list of type names that multiple specialists will reference
 - [ ] Pass `shared_types` into each specialist's `insight` field: "The following shared types are pre-agreed: {shared_types}. Use these exact names and shapes."
 - [ ] Re-run with rfc2119 + openapi + jsonschema; verify Stage 2 Gate passes on `ErrorResponse` consistency
+- **Do after T3/T4:** pipeline design change with schema impact; unit tests (T2) must be in place to catch regressions; model behaviour should be stable first
+- **Depends on:** T1, T2
 
-#### T4 — Model quirk: Gemini RFC 2119 heading
-- [ ] Step 1: add one-shot example to `statement` field in rfc2119 specialist CRISPE showing `# Constraints` heading — run Gemini variant, check non-LLM assertion
-- [ ] Step 2 (if still failing): reverse prompting loop (max 3 cycles) — feed Sonnet PASS artefact to Gemini, apply suggested delta, re-run, record quirk_log
-- [ ] Verify non-LLM assertion passes on Gemini variant
-
-#### T5 — Model quirk: Grok Spec Advisor JSON
-- [ ] Step 1: add one-shot example JSON to `statement` field in spec_advisor CRISPE — run Grok variant, check `spec_advice` non-empty
-- [ ] Step 2 (if still failing): reverse prompting loop (max 3 cycles) — feed Sonnet PASS JSON to Grok, apply suggested delta, re-run, record quirk_log
-- [ ] Verify `spec_advice` non-empty on Grok variant
-
-#### T6 — AB test re-run with fixes
+#### T6 — AB test re-run with all fixes
 - [ ] Re-run `scripts/run_ab_test.py` with all three models after T3–T5 fixes
 - [ ] Target: all three models pass Stage 1 Gate; at least Sonnet and Gemini pass Stage 2 Gate
 - [ ] Record cost per model per node in findings.md
+- **Depends on:** T3, T4, T5 (all fixes applied)
 
 ---
 
