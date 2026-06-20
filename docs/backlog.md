@@ -287,15 +287,24 @@ Option 2 is the most architecturally clean — it keeps parallelism and fixes th
 
 **Goal:** Make PEF compositions robust enough that all three cloud models produce gate-passing output without model-specific prompt branches.
 
-**Reverse prompting technique (to explore):**
-The idea: given a *target output* (a good artefact we already have), ask the same model — "given this output, what system prompt would you suggest to reliably produce it?"
+**Fix order per quirk:**
+1. **One-shot example first** — add a single well-formed example to the `statement` field matching the exact output format required. Models pattern-match on examples far more reliably than abstract rules. Cheapest fix; try this before anything else.
+2. **Reverse prompting if the example doesn't close the gap** — feed the target output (Sonnet PASS artefact) to the failing model and ask: *"This is the desired output for [node]. What system prompt would reliably produce this output from you? Be specific about format constraints, persona, and output discipline instructions you would follow."* Apply the suggested delta as a surgical PEF field edit. Cap at `MAX_QUIRK_CYCLES = 3` iterations; if still failing after 3 cycles, mark the model as "needs manual review" for that node and move on.
 
-This is prompt inversion. Instead of iterating blind, we let the model tell us what instruction framing it responds to. Workflow:
-1. Take a PASS artefact from a Sonnet run (ground truth)
-2. Feed it to Gemini/Grok with prompt: *"This is the desired output for [node]. What system prompt would reliably produce this output from you? Be specific about format constraints, persona, and output discipline instructions you would follow."*
-3. Compare suggested prompt against current CRISPE composition — identify the delta
-4. Apply the delta as a surgical PEF field edit (not a full rewrite)
-5. Re-run the failing node against the same input and verify gate passes
+**Reverse prompting loop structure:**
+```python
+for cycle in range(MAX_QUIRK_CYCLES):   # 3
+    run node → check gate assertion
+    if pass: break
+    ask model: "given this output, what system prompt produces it?"
+    apply suggested patch to single CRISPE field
+    record (cycle, patch, gate_result) in quirk_log
+else:
+    mark model as "needs manual review" for this node
+```
+The `quirk_log` is the artefact — even when the cycle exhausts, you have a sequence of model-suggested patches and gate outcomes. That becomes the quirk register written by the models themselves.
+
+**Model-specific injection (longer term):** Once quirks are characterised, register them in a `MODEL_TWEAKS` dict keyed by `(model_alias, node_name)` → CRISPE field overrides applied at runtime. The base CRISPE stays canonical; model deltas are explicit, localised, and version-controlled separately.
 
 This keeps PEF as the single source of truth while using each model's self-knowledge to close the gap.
 
@@ -327,14 +336,14 @@ This keeps PEF as the single source of truth while using each model's self-knowl
 - [ ] Re-run with rfc2119 + openapi + jsonschema; verify Stage 2 Gate passes on `ErrorResponse` consistency
 
 #### T4 — Model quirk: Gemini RFC 2119 heading
-- [ ] Apply reverse prompting: feed Sonnet's RFC 2119 output to Gemini, ask for prompt suggestion
-- [ ] Apply delta to CRISPE `statement` field in Spec Advisor recommendation for rfc2119
-- [ ] Re-run AB test Gemini variant; verify non-LLM assertion passes
+- [ ] Step 1: add one-shot example to `statement` field in rfc2119 specialist CRISPE showing `# Constraints` heading — run Gemini variant, check non-LLM assertion
+- [ ] Step 2 (if still failing): reverse prompting loop (max 3 cycles) — feed Sonnet PASS artefact to Gemini, apply suggested delta, re-run, record quirk_log
+- [ ] Verify non-LLM assertion passes on Gemini variant
 
 #### T5 — Model quirk: Grok Spec Advisor JSON
-- [ ] Apply reverse prompting: feed Sonnet's Spec Advisor JSON output to Grok, ask for prompt suggestion
-- [ ] Tighten `experiment` field or add explicit JSON schema example to `statement`
-- [ ] Re-run Grok variant; verify `spec_advice` is non-empty
+- [ ] Step 1: add one-shot example JSON to `statement` field in spec_advisor CRISPE — run Grok variant, check `spec_advice` non-empty
+- [ ] Step 2 (if still failing): reverse prompting loop (max 3 cycles) — feed Sonnet PASS JSON to Grok, apply suggested delta, re-run, record quirk_log
+- [ ] Verify `spec_advice` non-empty on Grok variant
 
 #### T6 — AB test re-run with fixes
 - [ ] Re-run `scripts/run_ab_test.py` with all three models after T3–T5 fixes
