@@ -1,16 +1,18 @@
 """
-CAI Gate node — Constitutional AI validation of Gherkin + NFR artefacts.
+CAI Gate node — Constitutional AI validation of all pipeline artefacts.
 
-Three assertions must pass before the artefact is emitted:
-  1. Structural parse (non-LLM): Feature keyword + Scenario + Given/When/Then present.
-  2. NFR structural check (non-LLM): all five required NFR sections present.
-  3. LLM rubric (cloud/claude-sonnet): coverage of time-of-day greeting, both content
-     choices (quote / joke), and at least one error path.
+Assertions:
+  1. Gherkin structural (non-LLM): Feature + Scenario + Given/When/Then present.
+  2. RFC 2119 structural (non-LLM): if rfc2119 artefact present, must contain
+     '# Constraints' heading and at least one RFC keyword (MUST/SHOULD/MAY).
+  3. LLM rubric (cloud/claude-sonnet): coverage check on Gherkin content.
 
-On failure the node appends feedback to gate_feedback and increments revision_count.
-Use route_after_gate() as the LangGraph conditional-edge router.
+Assertion 2 fires only when the rfc2119 artefact is in spec_artefacts — the gate
+adapts to whatever specialists ran. Add new artefact assertions here as new
+specialists are registered.
 
-Max revisions: 2 (after 2 failures the pipeline halts with gate_passed=False).
+On failure: appends to gate_feedback, increments revision_count.
+Max revisions: 2 — after 2 failures the pipeline halts with gate_passed=False.
 Langfuse span: cai_gate
 """
 
@@ -37,9 +39,11 @@ _RUBRIC_SYSTEM = (
     "No other output."
 )
 
+_RFC_KEYWORDS = re.compile(r"\b(MUST NOT|SHOULD NOT|MUST|SHOULD|MAY)\b")
 
-def _assertion_1_structural(gherkin: str) -> tuple[bool, str]:
-    """Non-LLM check: must have Feature, at least one Scenario, and Given/When/Then."""
+
+def _assertion_1_gherkin_structural(gherkin: str) -> tuple[bool, str]:
+    """Non-LLM: Feature keyword + at least one Scenario + Given/When/Then."""
     if not re.search(r"^\s*Feature:", gherkin, re.MULTILINE):
         return False, "Missing 'Feature:' keyword."
     if not re.search(r"^\s*Scenario", gherkin, re.MULTILINE):
@@ -49,20 +53,12 @@ def _assertion_1_structural(gherkin: str) -> tuple[bool, str]:
     return True, ""
 
 
-_NFR_REQUIRED_SECTIONS = [
-    "## Tech Stack",
-    "## External APIs",
-    "## Timeouts & Retries",
-    "## Auth Model",
-    "## Error Handling",
-]
-
-
-def _assertion_2_nfr_structural(nfr: str) -> tuple[bool, str]:
-    """Non-LLM check: NFR doc must contain all five required section headings."""
-    missing = [s for s in _NFR_REQUIRED_SECTIONS if s not in nfr]
-    if missing:
-        return False, f"NFR document missing sections: {', '.join(missing)}"
+def _assertion_2_rfc2119_structural(rfc: str) -> tuple[bool, str]:
+    """Non-LLM: RFC 2119 doc must have '# Constraints' and at least one RFC keyword."""
+    if "# Constraints" not in rfc:
+        return False, "RFC 2119 artefact missing '# Constraints' heading."
+    if not _RFC_KEYWORDS.search(rfc):
+        return False, "RFC 2119 artefact contains no MUST/SHOULD/MAY keywords."
     return True, ""
 
 
@@ -89,13 +85,12 @@ def _assertion_3_rubric(gherkin: str, client: httpx.Client) -> tuple[bool, str]:
     verdict = resp.json()["choices"][0]["message"]["content"].strip()
     if verdict.startswith("PASS"):
         return True, ""
-    # Anything starting with FAIL (or unexpected) is treated as failure
     return False, verdict if verdict.startswith("FAIL:") else f"FAIL: {verdict}"
 
 
 def cai_gate_node(state: NormaState) -> NormaState:
     gherkin = state.get("gherkin_content", "")
-    nfr = state.get("nfr_content", "")
+    spec_artefacts = state.get("spec_artefacts") or {}
     revision_count = state.get("revision_count", 0)
 
     langfuse = Langfuse(
@@ -104,72 +99,55 @@ def cai_gate_node(state: NormaState) -> NormaState:
         host=settings.LANGFUSE_HOST,
     )
 
+    def _fail(msg: str, assertion: int) -> NormaState:
+        span.update(output={"gate_passed": False, "feedback": msg, "assertion": assertion})
+        langfuse.flush()
+        return {
+            "gate_passed": False,
+            "gate_feedback": msg,
+            "revision_count": revision_count + 1,
+        }
+
     with langfuse.start_as_current_observation(
         name="cai_gate",
         as_type="span",
-        input={"revision_count": revision_count, "model": MODEL},
+        input={
+            "revision_count": revision_count,
+            "model": MODEL,
+            "artefacts_present": list(spec_artefacts.keys()),
+        },
     ) as span:
-        # Assertion 1 — Gherkin structural (no LLM call)
-        a1_ok, a1_msg = _assertion_1_structural(gherkin)
+        # Assertion 1 — Gherkin structural
+        ok, msg = _assertion_1_gherkin_structural(gherkin)
+        if not ok:
+            return _fail(f"Gherkin structural check failed: {msg}", 1)
 
-        if not a1_ok:
-            feedback = f"Gherkin structural check failed: {a1_msg}"
-            span.update(output={"gate_passed": False, "feedback": feedback, "assertion": 1})
-            langfuse.flush()
-            return {
-                **state,
-                "gate_passed": False,
-                "gate_feedback": feedback,
-                "revision_count": revision_count + 1,
-            }
+        # Assertion 2 — RFC 2119 structural (only if the artefact was produced)
+        if "rfc2119" in spec_artefacts:
+            ok, msg = _assertion_2_rfc2119_structural(spec_artefacts["rfc2119"])
+            if not ok:
+                return _fail(f"RFC 2119 structural check failed: {msg}", 2)
 
-        # Assertion 2 — NFR structural (no LLM call)
-        a2_ok, a2_msg = _assertion_2_nfr_structural(nfr)
-
-        if not a2_ok:
-            feedback = f"NFR structural check failed: {a2_msg}"
-            span.update(output={"gate_passed": False, "feedback": feedback, "assertion": 2})
-            langfuse.flush()
-            return {
-                **state,
-                "gate_passed": False,
-                "gate_feedback": feedback,
-                "revision_count": revision_count + 1,
-            }
-
-        # Assertion 3 — LLM rubric
+        # Assertion 3 — LLM rubric on Gherkin
         with httpx.Client(timeout=60.0) as client:
-            a3_ok, a3_msg = _assertion_3_rubric(gherkin, client)
-
-        if not a3_ok:
-            feedback = f"Coverage rubric failed: {a3_msg}"
-            span.update(output={"gate_passed": False, "feedback": feedback, "assertion": 3})
-            langfuse.flush()
-            return {
-                **state,
-                "gate_passed": False,
-                "gate_feedback": feedback,
-                "revision_count": revision_count + 1,
-            }
+            ok, msg = _assertion_3_rubric(gherkin, client)
+        if not ok:
+            return _fail(f"Coverage rubric failed: {msg}", 3)
 
         span.update(output={"gate_passed": True})
 
     langfuse.flush()
-    return {
-        **state,
-        "gate_passed": True,
-        "gate_feedback": "",
-    }
+    return {"gate_passed": True, "gate_feedback": ""}
 
 
 def route_after_gate(state: NormaState) -> str:
     """
-    LangGraph conditional-edge router for use after cai_gate_node.
+    LangGraph conditional-edge router after cai_gate_node.
 
     Returns:
-        "end"             — gate passed; pipeline continues to output
-        "revise"          — gate failed and revisions remain; loop back to gherkin_specialist
-        "halt"            — gate failed and max revisions exhausted; stop pipeline
+        "end"   — gate passed
+        "revise" — gate failed, revisions remain; loop back to gherkin_specialist
+        "halt"   — gate failed, max revisions exhausted
     """
     if state.get("gate_passed"):
         return "end"
