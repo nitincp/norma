@@ -24,7 +24,9 @@ Usage:
 import json
 import sys
 
-from output_utils import Timer, make_run_dir, write_summary
+from datetime import timezone
+
+from output_utils import Timer, fetch_run_usage, make_run_dir, write_summary
 
 from norma import settings  # noqa: F401 — triggers load_dotenv
 from norma.graph import build_pipeline2, pipeline1
@@ -157,8 +159,24 @@ def main() -> None:
         },
     })
 
+    # Fetch token usage + cost from Langfuse (observations in this run's time window)
+    from datetime import datetime
+    usage = fetch_run_usage(
+        start_utc=total_timer.start_utc,
+        end_utc=datetime.now(timezone.utc),
+        langfuse_host=settings.LANGFUSE_HOST,
+        public_key=settings.LANGFUSE_PUBLIC_KEY,
+        secret_key=settings.LANGFUSE_SECRET_KEY,
+    )
+    # Patch summary with usage
+    summary_path = run_dir / "run_summary.json"
+    summary_data = json.loads(summary_path.read_text())
+    summary_data.update(usage)
+    summary_path.write_text(json.dumps(summary_data, indent=2))
+
     # Final console summary
-    print(f"\nTotal: {total_timer.elapsed()}s — {run_dir}/")
+    print(f"\nTotal: {total_timer.elapsed()}s — ${usage['cost_usd']:.4f}"
+          f" ({usage['prompt_tokens']:,} in / {usage['completion_tokens']:,} out) — {run_dir}/")
     for f in all_artefacts:
         print(f"  {run_dir / f}")
 
