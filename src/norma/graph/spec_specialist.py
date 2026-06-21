@@ -2,21 +2,27 @@
 Spec Specialist shell node — generic CRISPE-driven artefact producer.
 
 This single node is dispatched N times in parallel by the graph (via Send),
-once per SpecRecommendation in spec_advice. Each invocation reads
-state["current_recommendation"] and assembles a full CRISPE prompt from it:
+once per SpecRecommendation in spec_advice. Each invocation fetches the fixed
+CRISPE fields (capacity, personality, experiment) from Langfuse and assembles
+a full prompt by injecting the Spec Advisor-generated fields at runtime:
 
-  capacity   — fixed: specialist author framing
-  role       — from recommendation.role       (Spec Advisor-generated)
-  insight    — from recommendation.insight    (Spec Advisor-generated, requirement-specific)
-  statement  — from recommendation.statement  (Spec Advisor-generated, format rules)
-  personality — fixed: standards-conformant precision
-  experiment  — fixed: output discipline
+  capacity    — from Langfuse (norma.spec_specialist_shell)
+  role        — from recommendation.role
+  insight     — from recommendation.insight
+  statement   — two-phase prefix (code) + recommendation.statement
+  personality — from Langfuse (norma.spec_specialist_shell)
+  experiment  — from Langfuse (norma.spec_specialist_shell)
+
+Prompt source: prompts/spec_specialist_shell.yaml → seeded to Langfuse.
+Edit the YAML and re-run scripts/seed_prompts.py to update the live prompt.
 
 The artefact is stored in spec_artefacts[recommendation.artefact_key].
 
 Model: NORMA_DEFAULT_MODEL env var (default: cloud/claude-sonnet)
 Langfuse span: spec_specialist.<artefact_key>
 """
+
+import re
 
 import httpx
 from langfuse import Langfuse
@@ -27,27 +33,11 @@ from norma.pef.crispe import CRISPE
 
 MODEL = settings.NORMA_DEFAULT_MODEL
 
-# Fixed CRISPE fields — stable across all specialist invocations.
-# Role, insight, and statement are injected per-invocation from the recommendation.
-_CAPACITY = (
-    "Act as a senior specification author with deep expertise in the formal standard "
-    "you have been briefed to apply. Produce artefacts that a code assistant can "
-    "implement from directly, without clarifying questions."
-)
+_LANGFUSE_PROMPT_NAME = "norma.spec_specialist_shell"
+_PROMPT_CACHE_TTL = 300  # seconds
 
-_PERSONALITY = (
-    "Standards-conformant and precise. Use the exact terminology of the target standard. "
-    "No invented scope — every statement must be traceable to the requirement text or "
-    "marked [implied]. No filler, no preamble."
-)
-
-_EXPERIMENT = (
-    "Follow the two-phase structure in STATEMENT exactly: output '## EXAMPLE' then '## ARTEFACT'. "
-    "No markdown fences. No preamble outside those two sections. "
-    "Mark inferred content with [implied] inline."
-)
-
-
+# Prepended to the Spec Advisor-generated statement at runtime.
+# Lives in code (not YAML) because {language} is a runtime value.
 _STATEMENT_PREFIX = (
     "Work in two phases:\n"
     "Phase 1 — Write a 4–6 line canonical example of a well-formed {language} artefact "
@@ -58,15 +48,30 @@ _STATEMENT_PREFIX = (
 )
 
 
-def _build_crispe(rec: SpecRecommendation) -> CRISPE:
+def _parse_crispe_section(text: str, section: str) -> str:
+    """Extract a named section value from a rendered CRISPE prompt string."""
+    parts = re.split(r"^([A-Z]+):\n", text, flags=re.MULTILINE)
+    # parts: [pre, name, content, name, content, ...]
+    for i in range(1, len(parts) - 1, 2):
+        if parts[i] == section:
+            return parts[i + 1].strip()
+    return ""
+
+
+def _build_crispe(
+    rec: SpecRecommendation,
+    capacity: str,
+    personality: str,
+    experiment: str,
+) -> CRISPE:
     statement = _STATEMENT_PREFIX.format(language=rec["language"]) + rec["statement"]
     return CRISPE(
-        capacity=_CAPACITY,
+        capacity=capacity,
         role=rec["role"],
         insight=rec["insight"],
         statement=statement,
-        personality=_PERSONALITY,
-        experiment=_EXPERIMENT,
+        personality=personality,
+        experiment=experiment,
     )
 
 
@@ -79,7 +84,15 @@ def spec_specialist_node(state: NormaState) -> NormaState:
         host=settings.LANGFUSE_HOST,
     )
 
-    system_prompt = _build_crispe(rec).system_prompt()
+    prompt_text = langfuse.get_prompt(
+        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+    ).prompt
+
+    capacity = _parse_crispe_section(prompt_text, "CAPACITY")
+    personality = _parse_crispe_section(prompt_text, "PERSONALITY")
+    experiment = _parse_crispe_section(prompt_text, "EXPERIMENT")
+
+    system_prompt = _build_crispe(rec, capacity, personality, experiment).system_prompt()
     user_message = (
         f"REQUIREMENT SEGMENTS (your scope — do not address anything outside this):\n"
         f"{rec['requirement_segments']}\n\n"

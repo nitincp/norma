@@ -16,49 +16,11 @@ from langfuse import Langfuse
 
 from norma import settings
 from norma.graph.state import EnvironmentOption, NormaState
-from norma.pef.crispe import CRISPE
 
 MODEL = settings.NORMA_ENV_ADVISOR_MODEL
 
-_CRISPE = CRISPE(
-    capacity=(
-        "Act as a senior solutions architect who recommends the minimum viable "
-        "set of runtime environments for a software requirement, ranked by fit."
-    ),
-    role=(
-        "You produce a ranked list of candidate environments so that a human SME "
-        "can select one before detailed technical spec work begins. "
-        "Each option must be self-consistent (runtime + framework + deployment "
-        "fit together) and justified by the requirement text."
-    ),
-    insight=(
-        "Consider these axes when choosing environments:\n"
-        "  - Runtime: language version + interpreter (e.g. Python 3.12, Node 22, JVM 21)\n"
-        "  - Framework: primary web / CLI / event framework (e.g. FastAPI, Express, Spring Boot)\n"
-        "  - Deployment: target platform (e.g. Docker/AWS Lambda, GCP Cloud Run, Kubernetes)\n\n"
-        "Selection rules:\n"
-        "  - Derive from the requirement; don't import generic best practices.\n"
-        "  - Rank 1 is the most obvious fit; include up to 3 options.\n"
-        "  - Omit options that are clearly incompatible with the requirement.\n"
-        "  - Rationale must reference specific words or phrases from the requirement."
-    ),
-    statement=(
-        "Return a JSON array. Each element has exactly these keys:\n\n"
-        '  "runtime"    : language + version (e.g. "Python 3.12")\n'
-        '  "framework"  : primary framework (e.g. "FastAPI")\n'
-        '  "deployment" : deployment target (e.g. "Docker / AWS Lambda")\n'
-        '  "rationale"  : one sentence citing the requirement\n'
-        '  "rank"       : integer starting at 1 (1 = most recommended)\n\n'
-        "Output ONLY the JSON array. No preamble, no markdown fences."
-    ),
-    personality=(
-        "Pragmatic and requirement-faithful. "
-        "Prefer widely adopted stacks unless the requirement implies otherwise."
-    ),
-    experiment=(
-        "Output ONLY the JSON array. No preamble, no explanation, no markdown fences."
-    ),
-)
+_LANGFUSE_PROMPT_NAME = "norma.environment_advisor"
+_PROMPT_CACHE_TTL = 300  # seconds
 
 
 def _parse_options(text: str) -> list[EnvironmentOption]:
@@ -102,7 +64,9 @@ def environment_advisor_node(state: NormaState) -> NormaState:
         host=settings.LANGFUSE_HOST,
     )
 
-    system_prompt = _CRISPE.system_prompt()
+    system_prompt = langfuse.get_prompt(
+        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+    ).prompt
 
     with langfuse.start_as_current_observation(
         name="environment_advisor",

@@ -27,17 +27,8 @@ from norma.graph.state import NormaState
 MODEL = settings.NORMA_CAI_GATE_MODEL
 MAX_REVISIONS = 2
 
-_RUBRIC_SYSTEM = (
-    "You are a strict QA gatekeeper evaluating a Gherkin feature file.\n"
-    "Check that the feature file covers ALL of the following requirements:\n"
-    "  1. A time-of-day greeting (e.g. Good Morning / Good Afternoon / Good Evening).\n"
-    "  2. Both content choices: Quote of the Day AND Joke of the Day.\n"
-    "  3. At least one error or failure path (e.g. retrieval failure, graceful error message).\n\n"
-    "Reply with exactly one of:\n"
-    "  PASS\n"
-    "  FAIL: <concise explanation of which requirement(s) are missing or inadequately covered>\n\n"
-    "No other output."
-)
+_LANGFUSE_PROMPT_NAME = "norma.cai_gate.rubric"
+_PROMPT_CACHE_TTL = 300  # seconds
 
 _RFC_KEYWORDS = re.compile(r"\b(MUST NOT|SHOULD NOT|MUST|SHOULD|MAY)\b")
 
@@ -65,6 +56,7 @@ def _assertion_2_rfc2119_structural(rfc: str) -> tuple[bool, str]:
 def _assertion_3_rubric(
     gherkin: str,
     client: httpx.Client,
+    rubric_system: str,
     trace_id: str | None = None,
     parent_observation_id: str | None = None,
 ) -> tuple[bool, str]:
@@ -75,7 +67,7 @@ def _assertion_3_rubric(
         json={
             "model": MODEL,
             "messages": [
-                {"role": "system", "content": _RUBRIC_SYSTEM},
+                {"role": "system", "content": rubric_system},
                 {"role": "user", "content": gherkin},
             ],
             "max_tokens": 256,
@@ -115,6 +107,10 @@ def cai_gate_node(state: NormaState) -> NormaState:
             "revision_count": revision_count + 1,
         }
 
+    rubric_system = langfuse.get_prompt(
+        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+    ).prompt
+
     with langfuse.start_as_current_observation(
         name="cai_gate",
         as_type="span",
@@ -138,7 +134,7 @@ def cai_gate_node(state: NormaState) -> NormaState:
         # Assertion 3 — LLM rubric on Gherkin
         with httpx.Client(timeout=60.0) as client:
             ok, msg = _assertion_3_rubric(
-                gherkin, client,
+                gherkin, client, rubric_system,
                 trace_id=langfuse.get_current_trace_id(),
                 parent_observation_id=langfuse.get_current_observation_id(),
             )

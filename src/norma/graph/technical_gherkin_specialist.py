@@ -19,53 +19,11 @@ from langfuse import Langfuse
 
 from norma import settings
 from norma.graph.state import NormaState
-from norma.pef.crispe import CRISPE
 
 MODEL = settings.NORMA_TECH_GHERKIN_MODEL
 
-_CRISPE = CRISPE(
-    capacity=(
-        "Act as a senior QA engineer who translates formal spec artefacts into "
-        "concise, traceable Gherkin test scenarios for developers."
-    ),
-    role=(
-        "You receive a business Gherkin file (for context only — do not copy it) "
-        "and one or more formal spec artefacts. "
-        "You produce a standalone technical Gherkin file containing only @technical "
-        "scenarios that cover constraints and contracts from the spec artefacts."
-    ),
-    insight=(
-        "Derive one scenario per distinct testable constraint:\n"
-        "  - RFC 2119 MUST/MUST NOT: one scenario per clause\n"
-        "  - OpenAPI: one scenario per operation (happy path + error codes)\n"
-        "  - JSON Schema: valid payload, missing required field, wrong type\n"
-        "  - AsyncAPI: publish/consume, schema violation, dead-letter\n\n"
-        "Rules:\n"
-        "  - Do NOT copy any scenario from gherkin_business\n"
-        "  - Every scenario gets @technical tag\n"
-        "  - Steps ≤ 15 words each\n"
-        "  - At most 8 scenarios total; use Scenario Outline + Examples for "
-        "parameterised boundary checks (≤ 4 rows incl. header)"
-    ),
-    statement=(
-        "Output a standalone Gherkin file — @technical scenarios only.\n"
-        "Structure:\n"
-        "  Feature: <same feature name as gherkin_business> — Technical Scenarios\n"
-        "  @technical\n"
-        "  Scenario: ...\n"
-        "    Given / When / Then steps (≤ 15 words each)\n\n"
-        "Strict limits: ≤ 8 scenarios, ≤ 50 lines total.\n"
-        "Output ONLY raw .feature content. No markdown fences. No prose."
-    ),
-    personality=(
-        "Concise and traceable. One scenario per constraint — no padding, "
-        "no duplication of business layer content."
-    ),
-    experiment=(
-        "Output ONLY the raw .feature file. No preamble, no markdown fences. "
-        "Start with 'Feature:'."
-    ),
-)
+_LANGFUSE_PROMPT_NAME = "norma.technical_gherkin_specialist"
+_PROMPT_CACHE_TTL = 300  # seconds
 
 
 def _build_user_message(state: NormaState) -> str:
@@ -94,7 +52,9 @@ def technical_gherkin_specialist_node(state: NormaState) -> NormaState:
         host=settings.LANGFUSE_HOST,
     )
 
-    system_prompt = _CRISPE.system_prompt()
+    system_prompt = langfuse.get_prompt(
+        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+    ).prompt
 
     with langfuse.start_as_current_observation(
         name="technical_gherkin_specialist",
@@ -114,7 +74,7 @@ def technical_gherkin_specialist_node(state: NormaState) -> NormaState:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_message},
                     ],
-                    "max_tokens": 1200,
+                    "max_tokens": 2000,
                     "temperature": 0.1,
                     "metadata": {
                         "generation_name": "technical-gherkin-llm-call",

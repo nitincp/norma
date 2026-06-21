@@ -17,34 +17,12 @@ from langfuse import Langfuse
 
 from norma import settings
 from norma.graph.state import NormaState
-from norma.pef.costar import COSTAR
-
 MODEL = (
     settings.NORMA_DEFAULT_MODEL
 )  # default: local/qwen2.5-0.5b; override via NORMA_DEFAULT_MODEL
 
-_COSTAR = COSTAR(
-    context=(
-        "You are an analyst in a software specification pipeline. "
-        "You receive raw informal requirement text and normalise it into a precise description."
-    ),
-    objective=(
-        "Rewrite the requirement as one clear paragraph with no ambiguity. "
-        "List every actor (human role or system component that acts). "
-        "List every external dependency (API, service, or data source the system needs)."
-    ),
-    style="Technical and precise. Active voice. No vague terms like 'etc' or 'and so on'.",
-    tone="Analytical and neutral.",
-    audience=(
-        "Engineers who will generate Gherkin, OpenAPI, and C4 specifications from this output."
-    ),
-    response_format=(
-        "Reply using this three-section structure:\n"
-        "NORMALISED: <paragraph>\n"
-        "ACTORS: <bullet list>\n"
-        "EXTERNAL_DEPS: <bullet list or 'none'>"
-    ),
-)
+_LANGFUSE_PROMPT_NAME = "norma.intake"
+_PROMPT_CACHE_TTL = 300  # seconds
 
 
 def _parse_output(text: str) -> tuple[str, list[str], list[str]]:
@@ -115,7 +93,9 @@ def intake_node(state: NormaState) -> NormaState:
         host=settings.LANGFUSE_HOST,
     )
 
-    system_prompt = _COSTAR.system_prompt()
+    system_prompt = langfuse.get_prompt(
+        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+    ).prompt
 
     with langfuse.start_as_current_observation(
         name="intake",

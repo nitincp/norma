@@ -144,8 +144,11 @@ def _mock_langfuse() -> MagicMock:
     span = MagicMock()
     span.__enter__ = MagicMock(return_value=span)
     span.__exit__ = MagicMock(return_value=False)
+    prompt_client = MagicMock()
+    prompt_client.prompt = "SYSTEM PROMPT STUB"
     lf = MagicMock()
     lf.start_as_current_observation.return_value = span
+    lf.get_prompt.return_value = prompt_client
     return lf
 
 

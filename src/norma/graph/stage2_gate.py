@@ -29,20 +29,8 @@ MAX_REVISIONS = 2
 
 _RFC_KEYWORDS = re.compile(r"\b(MUST NOT|SHOULD NOT|MUST|SHOULD|MAY)\b")
 
-_RUBRIC_SYSTEM = (
-    "You are a strict QA gatekeeper evaluating a standalone technical Gherkin file.\n"
-    "The file contains ONLY @technical scenarios derived from formal spec artefacts. "
-    "Business scenarios are in a separate file — do not expect them here.\n\n"
-    "Check that the technical Gherkin satisfies ALL of the following:\n"
-    "  1. Contains only scenarios tagged @technical (no untagged business scenarios).\n"
-    "  2. The @technical scenarios together cover the key constraints and contracts "
-    "expressed in the provided spec artefacts (RFC keywords, API operations, "
-    "schema rules, etc.).\n\n"
-    "Reply with exactly one of:\n"
-    "  PASS\n"
-    "  FAIL: <concise explanation of what is missing or inadequately covered>\n\n"
-    "No other output."
-)
+_LANGFUSE_PROMPT_NAME = "norma.stage2_gate.rubric"
+_PROMPT_CACHE_TTL = 300  # seconds
 
 
 def _assertion_1_gherkin_technical_structural(gherkin: str) -> tuple[bool, str]:
@@ -69,6 +57,7 @@ def _assertion_2_technical_gherkin_coverage(
     gherkin_technical: str,
     spec_artefacts: dict[str, str],
     client: httpx.Client,
+    rubric_system: str,
     trace_id: str | None = None,
     parent_observation_id: str | None = None,
 ) -> tuple[bool, str]:
@@ -87,7 +76,7 @@ def _assertion_2_technical_gherkin_coverage(
         json={
             "model": MODEL,
             "messages": [
-                {"role": "system", "content": _RUBRIC_SYSTEM},
+                {"role": "system", "content": rubric_system},
                 {"role": "user", "content": user_msg},
             ],
             "max_tokens": 300,
@@ -117,6 +106,10 @@ def stage2_gate_node(state: NormaState) -> NormaState:
         secret_key=settings.LANGFUSE_SECRET_KEY,
         host=settings.LANGFUSE_HOST,
     )
+
+    rubric_system = langfuse.get_prompt(
+        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+    ).prompt
 
     def _fail(msg: str, assertion: int) -> NormaState:
         span.update(output={"gate_passed": False, "feedback": msg, "assertion": assertion})
@@ -150,7 +143,7 @@ def stage2_gate_node(state: NormaState) -> NormaState:
         # Assertion 2 — LLM rubric: technical Gherkin covers spec constraints
         with httpx.Client(timeout=60.0) as client:
             ok, msg = _assertion_2_technical_gherkin_coverage(
-                gherkin_technical, spec_artefacts, client,
+                gherkin_technical, spec_artefacts, client, rubric_system,
                 trace_id=langfuse.get_current_trace_id(),
                 parent_observation_id=langfuse.get_current_observation_id(),
             )

@@ -12,47 +12,10 @@ from langfuse import Langfuse
 
 from norma import settings
 from norma.graph.state import NormaState
-from norma.pef.crispe import CRISPE
-
 MODEL = settings.NORMA_GHERKIN_MODEL
 
-_CRISPE = CRISPE(
-    capacity=(
-        "Act as a senior QA engineer with deep expertise in Behaviour-Driven Development "
-        "and the Gherkin specification language."
-    ),
-    role=(
-        "You convert normalised software requirements into syntactically valid Gherkin "
-        "Feature files that a business stakeholder can read and sign off on. "
-        "No technical implementation detail — behaviour only."
-    ),
-    insight=(
-        "Focus on the minimum set of scenarios that covers the requirement completely:\n"
-        "  - One Scenario Outline per parameterised behaviour (e.g. time-band → greeting)\n"
-        "  - One Scenario per distinct happy path\n"
-        "  - One Scenario per error/failure path\n"
-        "Do not duplicate coverage. Background is only needed when ≥3 scenarios share "
-        "the same Given steps."
-    ),
-    statement=(
-        "Generate a Gherkin Feature file for the given requirement.\n"
-        "Strict limits:\n"
-        "  - At most 6 scenarios or scenario outlines total\n"
-        "  - Each step (Given/When/Then/And) ≤ 15 words\n"
-        "  - Examples tables: ≤ 4 rows including header\n"
-        "  - No nested rules blocks\n"
-        "  - No comments or tags\n"
-        "  - Total file length: under 80 lines\n"
-        "Coverage requirement: every distinct behaviour in the requirement MUST appear "
-        "as at least one scenario step. Do not merge unrelated behaviours into one step."
-    ),
-    personality="Economical and precise — every line must earn its place. No padding.",
-    experiment=(
-        "Output ONLY the raw .feature file content. "
-        "Do not wrap in markdown fences or add explanation. "
-        "Start with the 'Feature:' keyword on the first line."
-    ),
-)
+_LANGFUSE_PROMPT_NAME = "norma.gherkin_specialist"
+_PROMPT_CACHE_TTL = 300  # seconds
 
 
 def gherkin_specialist_node(state: NormaState) -> NormaState:
@@ -64,7 +27,9 @@ def gherkin_specialist_node(state: NormaState) -> NormaState:
         host=settings.LANGFUSE_HOST,
     )
 
-    system_prompt = _CRISPE.system_prompt()
+    system_prompt = langfuse.get_prompt(
+        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+    ).prompt
 
     with langfuse.start_as_current_observation(
         name="gherkin_specialist",

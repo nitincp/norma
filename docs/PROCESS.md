@@ -73,15 +73,51 @@ This is the integration test for Norma's spec quality. If the code assistant nee
 
 ---
 
+## Prompt Management
+
+All prompts live in `prompts/*.yaml` as the canonical source of truth. The pipeline fetches them from Langfuse at runtime.
+
+**Workflow for any prompt change:**
+
+```
+1. Edit the relevant prompts/*.yaml file
+2. uv run python scripts/seed_prompts.py <node>   # push new version to Langfuse
+3. uv run python scripts/run_<node>.py            # smoke test the node in isolation
+4. Observe the Langfuse trace — the trace is now linked to the exact prompt version
+5. uv run python scripts/run_full.py              # end-to-end if node smoke test passes
+```
+
+Each `seed_prompts.py` call creates a new versioned prompt in Langfuse labelled `production`. Prior versions are preserved. Every Langfuse trace links to the exact prompt version that produced it — use this when analysing a bad trace.
+
+**File → Langfuse name mapping:**
+
+| YAML file | Langfuse name | Node |
+|---|---|---|
+| `prompts/intake.yaml` | `norma.intake` | intake |
+| `prompts/gherkin_specialist.yaml` | `norma.gherkin_specialist` | gherkin_specialist |
+| `prompts/environment_advisor.yaml` | `norma.environment_advisor` | environment_advisor |
+| `prompts/stage1_gate.yaml` | `norma.stage1_gate.rubric` | stage1_gate (assertion 2 only) |
+| `prompts/spec_advisor.yaml` | `norma.spec_advisor` | spec_advisor |
+| `prompts/spec_specialist_shell.yaml` | `norma.spec_specialist_shell` | spec_specialist |
+| `prompts/technical_gherkin_specialist.yaml` | `norma.technical_gherkin_specialist` | technical_gherkin_specialist |
+| `prompts/stage2_gate.yaml` | `norma.stage2_gate.rubric` | stage2_gate (assertion 2 only) |
+| `prompts/cai_gate.yaml` | `norma.cai_gate.rubric` | cai_gate (assertion 3 only) |
+
+**Spec Specialist note:** `role`, `insight`, and `statement` are injected at runtime from the Spec Advisor's recommendation — only `capacity`, `personality`, and `experiment` come from Langfuse. The two-phase statement prefix (`## EXAMPLE / ## ARTEFACT`) lives in code because it wraps a runtime value (`{language}`).
+
+**Gate notes:** Stage 1 and Stage 2 gate assertion 1 checks are non-LLM structural checks (not seeded). Only the LLM rubric (assertion 2) is in YAML/Langfuse. Same applies to CAI gate assertion 3.
+
+---
+
 ## PEF Refinement Loop
 
 All prompts are PEF compositions (COSTAR, CRISPE, CAI). Refinements follow this pattern:
 
-1. Run with current composition
-2. Observe output quality + gate result
-3. Identify which PEF field caused the issue (too vague Objective? wrong Audience? missing Constraint?)
-4. Adjust that field only — one variable at a time
-5. Re-run, compare
+1. Edit the YAML — one field only
+2. Seed: `uv run python scripts/seed_prompts.py <node>`
+3. Run: smoke test or full pipeline
+4. Observe: Langfuse trace linked to the new prompt version
+5. Compare output quality vs prior version
 
 No rewriting whole prompts. Surgical field edits, observed effect.
 

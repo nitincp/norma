@@ -21,17 +21,8 @@ from norma.graph.state import NormaState
 
 MODEL = settings.NORMA_STAGE1_GATE_MODEL
 
-_RUBRIC_SYSTEM = (
-    "You are a business analyst reviewing a Gherkin feature file against a requirement.\n"
-    "Decide whether the Gherkin captures all the NAMED FEATURES described in the requirement "
-    "at a high level. Do NOT require boundary/edge-case scenarios, implementation details, "
-    "or exhaustive examples — those belong in technical specs.\n\n"
-    "Key behaviours to look for: named user actions, named system responses, "
-    "named content types, and named error flows that the requirement explicitly states.\n\n"
-    "Output ONLY one of these two forms — nothing else, no reasoning, no markdown:\n"
-    "  PASS\n"
-    "  FAIL: <one sentence naming which named feature is entirely absent from the Gherkin>\n"
-)
+_LANGFUSE_PROMPT_NAME = "norma.stage1_gate.rubric"
+_PROMPT_CACHE_TTL = 300  # seconds
 
 
 def _assertion_1_env_plausibility(state: NormaState) -> tuple[bool, str]:
@@ -46,6 +37,7 @@ def _assertion_2_gherkin_coverage(
     normalised: str,
     gherkin: str,
     client: httpx.Client,
+    rubric_system: str,
     trace_id: str | None = None,
     parent_observation_id: str | None = None,
 ) -> tuple[bool, str]:
@@ -60,7 +52,7 @@ def _assertion_2_gherkin_coverage(
         json={
             "model": MODEL,
             "messages": [
-                {"role": "system", "content": _RUBRIC_SYSTEM},
+                {"role": "system", "content": rubric_system},
                 {"role": "user", "content": user_msg},
             ],
             "max_tokens": 512,
@@ -90,6 +82,10 @@ def stage1_gate_node(state: NormaState) -> NormaState:
         host=settings.LANGFUSE_HOST,
     )
 
+    rubric_system = langfuse.get_prompt(
+        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+    ).prompt
+
     with langfuse.start_as_current_observation(
         name="stage1_gate",
         as_type="span",
@@ -108,7 +104,7 @@ def stage1_gate_node(state: NormaState) -> NormaState:
         # Assertion 2 — Gherkin business coverage (LLM)
         with httpx.Client(timeout=60.0) as client:
             ok, msg = _assertion_2_gherkin_coverage(
-                normalised, gherkin, client,
+                normalised, gherkin, client, rubric_system,
                 trace_id=langfuse.get_current_trace_id(),
                 parent_observation_id=langfuse.get_current_observation_id(),
             )
