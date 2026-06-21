@@ -1,17 +1,17 @@
 """
 Spec Advisor node — CRISPE-prompted per-requirement bundle planner.
 
-Pipeline 2 inputs (REQ-004):
-  - gherkin_business       — SME-validated business Gherkin (immutable)
-  - selected_environment   — SME-chosen runtime/framework/deployment option
-  - normalised_requirement — traceability; secondary signal
+Inputs:
+  - normalised_requirement — primary signal for deciding which spec languages are needed
+  - selected_environment   — refines advice (e.g. CLI env → no OpenAPI)
 
-With validated Gherkin + an explicit environment, the Spec Advisor's inferences
-collapse from three (environment + contracts + constraints) to one, improving
-confidence and determinism.
+Spec Advisor makes an architectural decision (which spec languages), not a behavioural
+one. The normalised requirement contains all necessary structural signal (external APIs,
+data contracts, behavioural constraints). Business Gherkin is deliberately excluded —
+it is the behaviour layer and adds noise without changing the spec-language decision.
 
-Falls back to normalised_requirement alone when gherkin_business is absent
-(backward compat for legacy pipeline smoke tests).
+Note: Spec Specialist receives only its own requirement_segments slice, not the full
+normalised requirement.
 
 Prompt source: prompts/spec_advisor.yaml → seeded to Langfuse as norma.spec_advisor.
 Edit the YAML and re-run scripts/seed_prompts.py to update the live prompt.
@@ -89,18 +89,10 @@ def _parse_advice(text: str) -> list[SpecRecommendation]:
 
 
 def _build_user_message(state: NormaState) -> str:
-    """
-    Build the user message for the Spec Advisor.
-
-    Pipeline 2 (REQ-004): uses gherkin_business + selected_environment as primary
-    signal; appends normalised_requirement for traceability.
-    Legacy / Pipeline 1 fallback: uses normalised_requirement alone.
-    """
-    gherkin_business = state.get("gherkin_business") or ""
-    selected_env = state.get("selected_environment")
     normalised = state.get("normalised_requirement", "")
+    selected_env = state.get("selected_environment")
 
-    if gherkin_business and selected_env:
+    if selected_env:
         env_lines = (
             f"  Runtime    : {selected_env['runtime']}\n"
             f"  Framework  : {selected_env['framework']}\n"
@@ -109,8 +101,7 @@ def _build_user_message(state: NormaState) -> str:
         )
         return (
             f"## Selected Environment\n{env_lines}\n\n"
-            f"## Business Gherkin (immutable)\n{gherkin_business}\n\n"
-            f"## Normalised Requirement (for traceability)\n{normalised}"
+            f"## Normalised Requirement\n{normalised}"
         )
     return normalised
 

@@ -60,6 +60,8 @@ def main() -> None:
     gherkin_business = p1.get("gherkin_business") or p1.get("gherkin_content", "")
 
     # Write P1 artefacts
+    normalised_req = p1.get("normalised_requirement", RAW_REQUIREMENT)
+    (run_dir / "req_001.normalised.txt").write_text(normalised_req)
     (run_dir / "req_001.feature").write_text(gherkin_business)
     (run_dir / "req_001.environments.json").write_text(
         json.dumps(env_options, indent=2)
@@ -127,7 +129,7 @@ def main() -> None:
 
     # run_summary.json — combined
     all_artefacts = (
-        ["req_001.feature", "req_001.environments.json", "req_001.technical.feature"]
+        ["req_001.normalised.txt", "req_001.feature", "req_001.environments.json", "req_001.technical.feature"]
         + [
             f"req_001.{k}.{'yaml' if k in ('openapi','asyncapi') else 'md'}"
             for k in spec_artefacts
