@@ -342,13 +342,16 @@ This keeps PEF as the single source of truth while using each model's self-knowl
 - **Rationale:** model cannot "forget" a structural requirement it just wrote in its own example; self-anchoring works for any spec type without pre-knowledge of what the Advisor will recommend
 - **Depends on:** T1
 
-#### T4 — Self-anchoring one-shot in Spec Advisor
-- [ ] Apply same two-phase technique to `spec_advisor.py` CRISPE `statement`:
-  - Step 1: generate a 2–3 item example of the required JSON output structure
-  - Step 2: produce the actual advice JSON for the requirement
-- [ ] Run Grok variant via `run_node.py` — verify `spec_advice` non-empty and valid JSON
-- [ ] If still failing: reverse prompting loop (max 3 cycles), record quirk_log
-- **Rationale:** Grok JSON truncation/parse failure is partly an anchoring problem — generating the schema skeleton first reinforces the output contract before the model commits to content
+#### T4 — Self-anchoring one-shot in Spec Advisor ✓
+- [x] Added one-shot example to `spec_advisor.yaml` `statement` field showing exact JSON schema required
+- [x] Changed Spec Advisor input: drops Business Gherkin (behaviour noise), now reads `normalised_requirement` + `selected_environment` only — architectural decision, not behavioural
+- [x] Root-caused JSON truncation at max_tokens:1500: verbose field values push 4–5 specialist output past ceiling → invalid JSON → `_parse_advice` returns `[]` silently
+- [x] Fixed with hard word-count limits per field in YAML (`rationale` ≤15 words, `requirement_segments` ≤20 words, `role` ≤15 words, `insight` ≤3 bullets × ≤8 words, `statement` ≤3 lines)
+- [x] Wired remaining 4 nodes to Langfuse prompt fetch: `environment_advisor`, `technical_gherkin_specialist`, `stage1_gate`, `stage2_gate` — all 9 active nodes now fully wired
+- [x] Created corresponding YAML prompts: `prompts/environment_advisor.yaml`, `prompts/stage1_gate.yaml`, `prompts/stage2_gate.yaml`, `prompts/technical_gherkin_specialist.yaml`
+- [x] Added cost + token usage to run summary: `fetch_run_usage()` in `output_utils.py` queries Langfuse observations API post-run; `run_summary.json` gets `prompt_tokens`, `completion_tokens`, `cost_usd`; console shows `$X.XXXX (N in / N out)`
+- [x] Normalised requirement now written to `output/.../req_001.normalised.txt`
+- **Rationale:** One-shot example anchors output schema; word-count limits prevent truncation; dropping Gherkin removes the behaviour/architecture signal conflict from the advisor's input
 - **Depends on:** T1, T3 (technique validated on Specialist first)
 
 #### T5 — Spec Advisor shared type contract
