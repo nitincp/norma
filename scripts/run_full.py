@@ -119,6 +119,7 @@ def main() -> None:
 
     # Write P2 artefacts
     (run_dir / "req_001.technical.feature").write_text(gherkin_technical)
+    (run_dir / "req_001.spec_advice.json").write_text(json.dumps(advice, indent=2))
     for key, content in spec_artefacts.items():
         ext = "yaml" if key in ("openapi", "asyncapi") else "md"
         (run_dir / f"req_001.{key}.{ext}").write_text(content)
@@ -131,7 +132,7 @@ def main() -> None:
 
     # run_summary.json — combined
     all_artefacts = (
-        ["req_001.normalised.txt", "req_001.feature", "req_001.environments.json", "req_001.technical.feature"]
+        ["req_001.normalised.txt", "req_001.feature", "req_001.environments.json", "req_001.spec_advice.json", "req_001.technical.feature"]
         + [
             f"req_001.{k}.{'yaml' if k in ('openapi','asyncapi') else 'md'}"
             for k in spec_artefacts
