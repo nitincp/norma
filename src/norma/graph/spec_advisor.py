@@ -109,6 +109,7 @@ def _build_user_message(state: NormaState) -> str:
 def spec_advisor_node(state: NormaState) -> NormaState:
     user_message = _build_user_message(state)
     normalised = state.get("normalised_requirement", "")
+    session_id = state.get("session_id")
 
     langfuse = Langfuse(
         public_key=settings.LANGFUSE_PUBLIC_KEY,
@@ -120,46 +121,47 @@ def spec_advisor_node(state: NormaState) -> NormaState:
         _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
     ).prompt
 
-    with langfuse.start_as_current_observation(
-        name="spec_advisor",
-        as_type="span",
-        input={
-            "normalised_requirement": normalised,
-            "has_gherkin_business": bool(state.get("gherkin_business")),
-            "has_selected_environment": bool(state.get("selected_environment")),
-            "model": MODEL,
-        },
-    ) as span:
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.post(
-                f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
-                headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
-                json={
-                    "model": MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
-                    "max_tokens": 1500,
-                    "temperature": 0.1,
-                    "metadata": {
-                        "generation_name": "spec-advisor-llm-call",
-                        "tags": ["spec_advisor", "norma"],
-                        "trace_id": langfuse.get_current_trace_id(),
-                        "parent_observation_id": langfuse.get_current_observation_id(),
+    with langfuse.propagate_attributes(session_id=session_id):
+        with langfuse.start_as_current_observation(
+            name="spec_advisor",
+            as_type="span",
+            input={
+                "normalised_requirement": normalised,
+                "has_gherkin_business": bool(state.get("gherkin_business")),
+                "has_selected_environment": bool(state.get("selected_environment")),
+                "model": MODEL,
+            },
+        ) as span:
+            with httpx.Client(timeout=60.0) as client:
+                resp = client.post(
+                    f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
+                    json={
+                        "model": MODEL,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_message},
+                        ],
+                        "max_tokens": 1500,
+                        "temperature": 0.1,
+                        "metadata": {
+                            "generation_name": "spec-advisor-llm-call",
+                            "tags": ["spec_advisor", "norma"],
+                            "trace_id": langfuse.get_current_trace_id(),
+                            "parent_observation_id": langfuse.get_current_observation_id(),
+                        },
                     },
-                },
-            )
+                )
 
-        resp.raise_for_status()
-        raw_content = resp.json()["choices"][0]["message"]["content"].strip()
-        advice = _parse_advice(raw_content)
+            resp.raise_for_status()
+            raw_content = resp.json()["choices"][0]["message"]["content"].strip()
+            advice = _parse_advice(raw_content)
 
-        span.update(output={
-            "specialist_count": len(advice),
-            "languages": [r["language"] for r in advice],
-            "raw": raw_content,
-        })
+            span.update(output={
+                "specialist_count": len(advice),
+                "languages": [r["language"] for r in advice],
+                "raw": raw_content,
+            })
 
     langfuse.flush()
 

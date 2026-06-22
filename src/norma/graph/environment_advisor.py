@@ -57,6 +57,7 @@ def _parse_options(text: str) -> list[EnvironmentOption]:
 
 def environment_advisor_node(state: NormaState) -> NormaState:
     normalised = state["normalised_requirement"]
+    session_id = state.get("session_id")
 
     langfuse = Langfuse(
         public_key=settings.LANGFUSE_PUBLIC_KEY,
@@ -68,41 +69,42 @@ def environment_advisor_node(state: NormaState) -> NormaState:
         _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
     ).prompt
 
-    with langfuse.start_as_current_observation(
-        name="environment_advisor",
-        as_type="span",
-        input={"normalised_requirement": normalised, "model": MODEL},
-    ) as span:
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.post(
-                f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
-                headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
-                json={
-                    "model": MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": normalised},
-                    ],
-                    "max_tokens": 800,
-                    "temperature": 0.1,
-                    "metadata": {
-                        "generation_name": "environment-advisor-llm-call",
-                        "tags": ["environment_advisor", "norma"],
-                        "trace_id": langfuse.get_current_trace_id(),
-                        "parent_observation_id": langfuse.get_current_observation_id(),
+    with langfuse.propagate_attributes(session_id=session_id):
+        with langfuse.start_as_current_observation(
+            name="environment_advisor",
+            as_type="span",
+            input={"normalised_requirement": normalised, "model": MODEL},
+        ) as span:
+            with httpx.Client(timeout=60.0) as client:
+                resp = client.post(
+                    f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
+                    json={
+                        "model": MODEL,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": normalised},
+                        ],
+                        "max_tokens": 800,
+                        "temperature": 0.1,
+                        "metadata": {
+                            "generation_name": "environment-advisor-llm-call",
+                            "tags": ["environment_advisor", "norma"],
+                            "trace_id": langfuse.get_current_trace_id(),
+                            "parent_observation_id": langfuse.get_current_observation_id(),
+                        },
                     },
-                },
-            )
+                )
 
-        resp.raise_for_status()
-        raw_content = resp.json()["choices"][0]["message"]["content"].strip()
-        options = _parse_options(raw_content)
+            resp.raise_for_status()
+            raw_content = resp.json()["choices"][0]["message"]["content"].strip()
+            options = _parse_options(raw_content)
 
-        span.update(output={
-            "option_count": len(options),
-            "options": [f"[{o['rank']}] {o['runtime']} / {o['framework']}" for o in options],
-            "raw": raw_content,
-        })
+            span.update(output={
+                "option_count": len(options),
+                "options": [f"[{o['rank']}] {o['runtime']} / {o['framework']}" for o in options],
+                "raw": raw_content,
+            })
 
     langfuse.flush()
 

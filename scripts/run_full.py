@@ -23,6 +23,7 @@ Usage:
 
 import json
 import sys
+import uuid
 
 from datetime import timezone
 
@@ -41,10 +42,12 @@ RAW_REQUIREMENT = (
 def main() -> None:
     total_timer = Timer()
     run_dir = make_run_dir()
+    session_id = str(uuid.uuid4())
 
     # ── Pipeline 1 ────────────────────────────────────────────────────────────
     p1_timer = Timer()
     p1_initial: NormaState = {
+        "session_id": session_id,
         "raw_requirement": RAW_REQUIREMENT,
         "normalised_requirement": "",
         "actors": [],
@@ -94,6 +97,7 @@ def main() -> None:
     # ── Pipeline 2 ────────────────────────────────────────────────────────────
     p2_timer = Timer()
     p2_initial: NormaState = {
+        "session_id": session_id,
         "raw_requirement": RAW_REQUIREMENT,
         "normalised_requirement": p1.get("normalised_requirement", RAW_REQUIREMENT),
         "actors": p1.get("actors") or [],

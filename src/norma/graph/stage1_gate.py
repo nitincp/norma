@@ -75,6 +75,7 @@ def _assertion_2_gherkin_coverage(
 def stage1_gate_node(state: NormaState) -> NormaState:
     gherkin = state.get("gherkin_content", "")
     normalised = state.get("normalised_requirement", "")
+    session_id = state.get("session_id")
 
     langfuse = Langfuse(
         public_key=settings.LANGFUSE_PUBLIC_KEY,
@@ -86,35 +87,36 @@ def stage1_gate_node(state: NormaState) -> NormaState:
         _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
     ).prompt
 
-    with langfuse.start_as_current_observation(
-        name="stage1_gate",
-        as_type="span",
-        input={
-            "model": MODEL,
-            "env_option_count": len(state.get("environment_options") or []),
-        },
-    ) as span:
-        # Assertion 1 — environment plausibility (non-LLM)
-        ok, msg = _assertion_1_env_plausibility(state)
-        if not ok:
-            span.update(output={"stage1_passed": False, "feedback": msg, "assertion": 1})
-            langfuse.flush()
-            return {"stage1_passed": False, "stage1_feedback": msg}
+    with langfuse.propagate_attributes(session_id=session_id):
+        with langfuse.start_as_current_observation(
+            name="stage1_gate",
+            as_type="span",
+            input={
+                "model": MODEL,
+                "env_option_count": len(state.get("environment_options") or []),
+            },
+        ) as span:
+            # Assertion 1 — environment plausibility (non-LLM)
+            ok, msg = _assertion_1_env_plausibility(state)
+            if not ok:
+                span.update(output={"stage1_passed": False, "feedback": msg, "assertion": 1})
+                langfuse.flush()
+                return {"stage1_passed": False, "stage1_feedback": msg}
 
-        # Assertion 2 — Gherkin business coverage (LLM)
-        with httpx.Client(timeout=60.0) as client:
-            ok, msg = _assertion_2_gherkin_coverage(
-                normalised, gherkin, client, rubric_system,
-                trace_id=langfuse.get_current_trace_id(),
-                parent_observation_id=langfuse.get_current_observation_id(),
-            )
-        if not ok:
-            feedback = f"Gherkin coverage check failed: {msg}"
-            span.update(output={"stage1_passed": False, "feedback": feedback, "assertion": 2})
-            langfuse.flush()
-            return {"stage1_passed": False, "stage1_feedback": feedback}
+            # Assertion 2 — Gherkin business coverage (LLM)
+            with httpx.Client(timeout=60.0) as client:
+                ok, msg = _assertion_2_gherkin_coverage(
+                    normalised, gherkin, client, rubric_system,
+                    trace_id=langfuse.get_current_trace_id(),
+                    parent_observation_id=langfuse.get_current_observation_id(),
+                )
+            if not ok:
+                feedback = f"Gherkin coverage check failed: {msg}"
+                span.update(output={"stage1_passed": False, "feedback": feedback, "assertion": 2})
+                langfuse.flush()
+                return {"stage1_passed": False, "stage1_feedback": feedback}
 
-        span.update(output={"stage1_passed": True})
+            span.update(output={"stage1_passed": True})
 
     langfuse.flush()
     # Promote gherkin_content to gherkin_business (immutable in Pipeline 2)

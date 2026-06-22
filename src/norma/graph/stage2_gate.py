@@ -100,6 +100,7 @@ def stage2_gate_node(state: NormaState) -> NormaState:
     gherkin_technical = state.get("gherkin_technical", "")
     spec_artefacts = state.get("spec_artefacts") or {}
     revision_count = state.get("revision_count", 0)
+    session_id = state.get("session_id")
 
     langfuse = Langfuse(
         public_key=settings.LANGFUSE_PUBLIC_KEY,
@@ -111,46 +112,47 @@ def stage2_gate_node(state: NormaState) -> NormaState:
         _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
     ).prompt
 
-    def _fail(msg: str, assertion: int) -> NormaState:
-        span.update(output={"gate_passed": False, "feedback": msg, "assertion": assertion})
-        langfuse.flush()
-        return {
-            "gate_passed": False,
-            "gate_feedback": msg,
-            "revision_count": revision_count + 1,
-        }
+    with langfuse.propagate_attributes(session_id=session_id):
+        with langfuse.start_as_current_observation(
+            name="stage2_gate",
+            as_type="span",
+            input={
+                "revision_count": revision_count,
+                "model": MODEL,
+                "artefacts_present": list(spec_artefacts.keys()),
+            },
+        ) as span:
+            def _fail(msg: str, assertion: int) -> NormaState:
+                span.update(output={"gate_passed": False, "feedback": msg, "assertion": assertion})
+                langfuse.flush()
+                return {
+                    "gate_passed": False,
+                    "gate_feedback": msg,
+                    "revision_count": revision_count + 1,
+                }
 
-    with langfuse.start_as_current_observation(
-        name="stage2_gate",
-        as_type="span",
-        input={
-            "revision_count": revision_count,
-            "model": MODEL,
-            "artefacts_present": list(spec_artefacts.keys()),
-        },
-    ) as span:
-        # Assertion 1a — technical Gherkin structural
-        ok, msg = _assertion_1_gherkin_technical_structural(gherkin_technical)
-        if not ok:
-            return _fail(f"Technical Gherkin structural check failed: {msg}", 1)
-
-        # Assertion 1b — RFC 2119 structural (only if artefact was produced)
-        if "rfc2119" in spec_artefacts:
-            ok, msg = _assertion_1_rfc2119_structural(spec_artefacts["rfc2119"])
+            # Assertion 1a — technical Gherkin structural
+            ok, msg = _assertion_1_gherkin_technical_structural(gherkin_technical)
             if not ok:
-                return _fail(f"RFC 2119 structural check failed: {msg}", 1)
+                return _fail(f"Technical Gherkin structural check failed: {msg}", 1)
 
-        # Assertion 2 — LLM rubric: technical Gherkin covers spec constraints
-        with httpx.Client(timeout=60.0) as client:
-            ok, msg = _assertion_2_technical_gherkin_coverage(
-                gherkin_technical, spec_artefacts, client, rubric_system,
-                trace_id=langfuse.get_current_trace_id(),
-                parent_observation_id=langfuse.get_current_observation_id(),
-            )
-        if not ok:
-            return _fail(f"Technical Gherkin coverage rubric failed: {msg}", 2)
+            # Assertion 1b — RFC 2119 structural (only if artefact was produced)
+            if "rfc2119" in spec_artefacts:
+                ok, msg = _assertion_1_rfc2119_structural(spec_artefacts["rfc2119"])
+                if not ok:
+                    return _fail(f"RFC 2119 structural check failed: {msg}", 1)
 
-        span.update(output={"gate_passed": True})
+            # Assertion 2 — LLM rubric: technical Gherkin covers spec constraints
+            with httpx.Client(timeout=60.0) as client:
+                ok, msg = _assertion_2_technical_gherkin_coverage(
+                    gherkin_technical, spec_artefacts, client, rubric_system,
+                    trace_id=langfuse.get_current_trace_id(),
+                    parent_observation_id=langfuse.get_current_observation_id(),
+                )
+            if not ok:
+                return _fail(f"Technical Gherkin coverage rubric failed: {msg}", 2)
+
+            span.update(output={"gate_passed": True})
 
     langfuse.flush()
     return {"gate_passed": True, "gate_feedback": ""}

@@ -67,6 +67,7 @@ _CRISPE = CRISPE(
 def nfr_specialist_node(state: NormaState) -> NormaState:
     normalised = state["normalised_requirement"]
     gherkin = state.get("gherkin_content", "")
+    session_id = state.get("session_id")
 
     langfuse = Langfuse(
         public_key=settings.LANGFUSE_PUBLIC_KEY,
@@ -80,40 +81,41 @@ def nfr_specialist_node(state: NormaState) -> NormaState:
         f"GHERKIN FEATURE FILE:\n{gherkin}"
     )
 
-    with langfuse.start_as_current_observation(
-        name="nfr_specialist",
-        as_type="span",
-        input={"normalised_requirement": normalised, "model": MODEL},
-    ) as span:
-        with httpx.Client(timeout=120.0) as client:
-            resp = client.post(
-                f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
-                headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
-                json={
-                    "model": MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
-                    "max_tokens": 700,
-                    "temperature": 0.1,
-                    "metadata": {
-                        "generation_name": "nfr-specialist-llm-call",
-                        "tags": ["nfr", "norma"],
+    with langfuse.propagate_attributes(session_id=session_id):
+        with langfuse.start_as_current_observation(
+            name="nfr_specialist",
+            as_type="span",
+            input={"normalised_requirement": normalised, "model": MODEL},
+        ) as span:
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(
+                    f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
+                    json={
+                        "model": MODEL,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_message},
+                        ],
+                        "max_tokens": 700,
+                        "temperature": 0.1,
+                        "metadata": {
+                            "generation_name": "nfr-specialist-llm-call",
+                            "tags": ["nfr", "norma"],
+                        },
                     },
-                },
-            )
+                )
 
-        resp.raise_for_status()
-        nfr_content = resp.json()["choices"][0]["message"]["content"].strip()
+            resp.raise_for_status()
+            nfr_content = resp.json()["choices"][0]["message"]["content"].strip()
 
-        # Strip accidental markdown fences
-        if nfr_content.startswith("```"):
-            lines = nfr_content.splitlines()
-            lines = [line for line in lines if not line.strip().startswith("```")]
-            nfr_content = "\n".join(lines).strip()
+            # Strip accidental markdown fences
+            if nfr_content.startswith("```"):
+                lines = nfr_content.splitlines()
+                lines = [line for line in lines if not line.strip().startswith("```")]
+                nfr_content = "\n".join(lines).strip()
 
-        span.update(output={"nfr_content": nfr_content})
+            span.update(output={"nfr_content": nfr_content})
 
     langfuse.flush()
 

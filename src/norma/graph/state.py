@@ -53,6 +53,9 @@ class EnvironmentOption(TypedDict):
 
 
 class NormaState(TypedDict, total=False):
+    # RUN IDENTITY
+    session_id: NotRequired[str]
+
     # INTAKE
     raw_requirement: str
     normalised_requirement: str

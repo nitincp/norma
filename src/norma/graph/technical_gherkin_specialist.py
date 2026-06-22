@@ -45,6 +45,7 @@ def _build_user_message(state: NormaState) -> str:
 
 def technical_gherkin_specialist_node(state: NormaState) -> NormaState:
     user_message = _build_user_message(state)
+    session_id = state.get("session_id")
 
     langfuse = Langfuse(
         public_key=settings.LANGFUSE_PUBLIC_KEY,
@@ -56,44 +57,45 @@ def technical_gherkin_specialist_node(state: NormaState) -> NormaState:
         _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
     ).prompt
 
-    with langfuse.start_as_current_observation(
-        name="technical_gherkin_specialist",
-        as_type="span",
-        input={
-            "artefact_keys": list((state.get("spec_artefacts") or {}).keys()),
-            "model": MODEL,
-        },
-    ) as span:
-        with httpx.Client(timeout=120.0) as client:
-            resp = client.post(
-                f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
-                headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
-                json={
-                    "model": MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
-                    "max_tokens": 2000,
-                    "temperature": 0.1,
-                    "metadata": {
-                        "generation_name": "technical-gherkin-llm-call",
-                        "tags": ["technical_gherkin_specialist", "norma"],
-                        "trace_id": langfuse.get_current_trace_id(),
-                        "parent_observation_id": langfuse.get_current_observation_id(),
+    with langfuse.propagate_attributes(session_id=session_id):
+        with langfuse.start_as_current_observation(
+            name="technical_gherkin_specialist",
+            as_type="span",
+            input={
+                "artefact_keys": list((state.get("spec_artefacts") or {}).keys()),
+                "model": MODEL,
+            },
+        ) as span:
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(
+                    f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
+                    json={
+                        "model": MODEL,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_message},
+                        ],
+                        "max_tokens": 2000,
+                        "temperature": 0.1,
+                        "metadata": {
+                            "generation_name": "technical-gherkin-llm-call",
+                            "tags": ["technical_gherkin_specialist", "norma"],
+                            "trace_id": langfuse.get_current_trace_id(),
+                            "parent_observation_id": langfuse.get_current_observation_id(),
+                        },
                     },
-                },
-            )
+                )
 
-        resp.raise_for_status()
-        gherkin_technical = resp.json()["choices"][0]["message"]["content"].strip()
+            resp.raise_for_status()
+            gherkin_technical = resp.json()["choices"][0]["message"]["content"].strip()
 
-        if gherkin_technical.startswith("```"):
-            lines = gherkin_technical.splitlines()
-            lines = [ln for ln in lines if not ln.strip().startswith("```")]
-            gherkin_technical = "\n".join(lines).strip()
+            if gherkin_technical.startswith("```"):
+                lines = gherkin_technical.splitlines()
+                lines = [ln for ln in lines if not ln.strip().startswith("```")]
+                gherkin_technical = "\n".join(lines).strip()
 
-        span.update(output={"gherkin_technical_length": len(gherkin_technical)})
+            span.update(output={"gherkin_technical_length": len(gherkin_technical)})
 
     langfuse.flush()
 

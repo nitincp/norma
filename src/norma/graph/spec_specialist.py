@@ -77,6 +77,7 @@ def _build_crispe(
 
 def spec_specialist_node(state: NormaState) -> NormaState:
     rec = state["current_recommendation"]
+    session_id = state.get("session_id")
 
     langfuse = Langfuse(
         public_key=settings.LANGFUSE_PUBLIC_KEY,
@@ -100,52 +101,56 @@ def spec_specialist_node(state: NormaState) -> NormaState:
         f"RATIONALE: {rec['rationale']}"
     )
 
-    with langfuse.start_as_current_observation(
-        name=f"spec_specialist.{rec['artefact_key']}",
-        as_type="span",
-        input={
-            "artefact_key": rec["artefact_key"],
-            "language": rec["language"],
-            "model": MODEL,
-        },
-    ) as span:
-        with httpx.Client(timeout=120.0) as client:
-            resp = client.post(
-                f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
-                headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
-                json={
-                    "model": MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
-                    "max_tokens": 1200,
-                    "temperature": 0.1,
-                    "metadata": {
-                        "generation_name": f"spec-specialist-{rec['artefact_key']}-llm-call",
-                        "tags": ["spec_specialist", rec["artefact_key"], "norma"],
-                        "trace_id": langfuse.get_current_trace_id(),
-                        "parent_observation_id": langfuse.get_current_observation_id(),
+    with langfuse.propagate_attributes(session_id=session_id):
+        with langfuse.start_as_current_observation(
+            name=f"spec_specialist.{rec['artefact_key']}",
+            as_type="span",
+            input={
+                "artefact_key": rec["artefact_key"],
+                "language": rec["language"],
+                "model": MODEL,
+            },
+        ) as span:
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(
+                    f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
+                    json={
+                        "model": MODEL,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_message},
+                        ],
+                        "max_tokens": 1200,
+                        "temperature": 0.1,
+                        "metadata": {
+                            "generation_name": f"spec-specialist-{rec['artefact_key']}-llm-call",
+                            "tags": ["spec_specialist", rec["artefact_key"], "norma"],
+                            "trace_id": langfuse.get_current_trace_id(),
+                            "parent_observation_id": langfuse.get_current_observation_id(),
+                        },
                     },
-                },
-            )
+                )
 
-        resp.raise_for_status()
-        raw = resp.json()["choices"][0]["message"]["content"].strip()
+            resp.raise_for_status()
+            raw = resp.json()["choices"][0]["message"]["content"].strip()
 
-        # Extract the ## ARTEFACT section produced by the two-phase prompt.
-        # Fall back to the full response if the model omits the label.
-        if "## ARTEFACT" in raw:
-            content = raw.split("## ARTEFACT", 1)[1].strip()
-        else:
-            content = raw
+            # Extract the ## ARTEFACT section produced by the two-phase prompt.
+            # Fall back to the full response if the model omits the label.
+            if "## ARTEFACT" in raw:
+                content = raw.split("## ARTEFACT", 1)[1].strip()
+            else:
+                content = raw
 
-        # Strip accidental markdown fences
-        if content.startswith("```"):
-            lines = [l for l in content.splitlines() if not l.strip().startswith("```")]
-            content = "\n".join(lines).strip()
+            # Strip accidental markdown fences
+            if content.startswith("```"):
+                lines = [
+                    line for line in content.splitlines()
+                    if not line.strip().startswith("```")
+                ]
+                content = "\n".join(lines).strip()
 
-        span.update(output={"artefact_key": rec["artefact_key"], "length": len(content)})
+            span.update(output={"artefact_key": rec["artefact_key"], "length": len(content)})
 
     langfuse.flush()
 
