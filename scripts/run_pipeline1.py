@@ -5,8 +5,8 @@ Runs: intake → [gherkin_specialist ‖ environment_advisor] → stage1_gate
 
 Artefacts written to output/YYYY-MM-DD/HHMMSS/:
   req_001.feature           — business Gherkin
-  req_001.environments.json — ranked environment options
-  run_summary.json          — gate result, model config, wall time
+  req_001.environments.checkpoint.json — ranked environment options
+  run_summary.debug.json          — gate result, model config, wall time
 
 Usage:
     uv run python scripts/run_pipeline1.py
@@ -50,7 +50,7 @@ def main() -> None:
 
     # Write artefacts
     (run_dir / "req_001.feature").write_text(gherkin)
-    (run_dir / "req_001.environments.json").write_text(
+    (run_dir / "req_001.environments.checkpoint.json").write_text(
         json.dumps(env_options, indent=2)
     )
     write_summary(run_dir, {
@@ -78,7 +78,7 @@ def main() -> None:
     if not passed:
         print(f"  feedback: {result.get('stage1_feedback')}", file=sys.stderr)
         sys.exit(1)
-    print("  artefacts: req_001.feature, req_001.environments.json, run_summary.json")
+    print("  artefacts: req_001.feature, req_001.environments.checkpoint.json, run_summary.debug.json")
 
     if not passed:
         sys.exit(1)

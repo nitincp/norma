@@ -29,6 +29,10 @@ uv run python scripts/run_intake.py
 uv run python scripts/test_langfuse.py
 uv run python scripts/test_litellm.py
 
+# Prompt management — edit prompts/*.yaml then seed before running
+uv run python scripts/seed_prompts.py              # seed all prompts
+uv run python scripts/seed_prompts.py spec_advisor # seed one prompt by node name
+
 # Infra (Docker services on the Linux VM host) — or use /infra skill
 ./.claude/commands/infra/up.sh
 ./.claude/commands/infra/down.sh

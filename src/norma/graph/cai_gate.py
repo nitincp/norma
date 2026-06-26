@@ -19,7 +19,7 @@ Langfuse span: cai_gate
 import re
 
 import httpx
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 
 from norma import settings
 from norma.graph.state import NormaState
@@ -27,17 +27,8 @@ from norma.graph.state import NormaState
 MODEL = settings.NORMA_CAI_GATE_MODEL
 MAX_REVISIONS = 2
 
-_RUBRIC_SYSTEM = (
-    "You are a strict QA gatekeeper evaluating a Gherkin feature file.\n"
-    "Check that the feature file covers ALL of the following requirements:\n"
-    "  1. A time-of-day greeting (e.g. Good Morning / Good Afternoon / Good Evening).\n"
-    "  2. Both content choices: Quote of the Day AND Joke of the Day.\n"
-    "  3. At least one error or failure path (e.g. retrieval failure, graceful error message).\n\n"
-    "Reply with exactly one of:\n"
-    "  PASS\n"
-    "  FAIL: <concise explanation of which requirement(s) are missing or inadequately covered>\n\n"
-    "No other output."
-)
+_LANGFUSE_PROMPT_NAME = "norma.cai_gate.rubric"
+_PROMPT_CACHE_TTL = 300  # seconds
 
 _RFC_KEYWORDS = re.compile(r"\b(MUST NOT|SHOULD NOT|MUST|SHOULD|MAY)\b")
 
@@ -65,6 +56,7 @@ def _assertion_2_rfc2119_structural(rfc: str) -> tuple[bool, str]:
 def _assertion_3_rubric(
     gherkin: str,
     client: httpx.Client,
+    rubric_system: str,
     trace_id: str | None = None,
     parent_observation_id: str | None = None,
 ) -> tuple[bool, str]:
@@ -75,7 +67,7 @@ def _assertion_3_rubric(
         json={
             "model": MODEL,
             "messages": [
-                {"role": "system", "content": _RUBRIC_SYSTEM},
+                {"role": "system", "content": rubric_system},
                 {"role": "user", "content": gherkin},
             ],
             "max_tokens": 256,
@@ -99,6 +91,7 @@ def cai_gate_node(state: NormaState) -> NormaState:
     gherkin = state.get("gherkin_content", "")
     spec_artefacts = state.get("spec_artefacts") or {}
     revision_count = state.get("revision_count", 0)
+    session_id = state.get("session_id")
 
     langfuse = Langfuse(
         public_key=settings.LANGFUSE_PUBLIC_KEY,
@@ -106,46 +99,51 @@ def cai_gate_node(state: NormaState) -> NormaState:
         host=settings.LANGFUSE_HOST,
     )
 
-    def _fail(msg: str, assertion: int) -> NormaState:
-        span.update(output={"gate_passed": False, "feedback": msg, "assertion": assertion})
-        langfuse.flush()
-        return {
-            "gate_passed": False,
-            "gate_feedback": msg,
-            "revision_count": revision_count + 1,
-        }
+    rubric_system = langfuse.get_prompt(
+        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+    ).prompt
 
-    with langfuse.start_as_current_observation(
-        name="cai_gate",
-        as_type="span",
-        input={
-            "revision_count": revision_count,
-            "model": MODEL,
-            "artefacts_present": list(spec_artefacts.keys()),
-        },
-    ) as span:
-        # Assertion 1 — Gherkin structural
-        ok, msg = _assertion_1_gherkin_structural(gherkin)
-        if not ok:
-            return _fail(f"Gherkin structural check failed: {msg}", 1)
+    with propagate_attributes(session_id=session_id):
+        with langfuse.start_as_current_observation(
+            name="cai_gate",
+            as_type="span",
+            input={
+                "revision_count": revision_count,
+                "model": MODEL,
+                "artefacts_present": list(spec_artefacts.keys()),
+            },
+        ) as span:
+            def _fail(msg: str, assertion: int) -> NormaState:
+                span.update(output={"gate_passed": False, "feedback": msg, "assertion": assertion})
+                langfuse.flush()
+                return {
+                    "gate_passed": False,
+                    "gate_feedback": msg,
+                    "revision_count": revision_count + 1,
+                }
 
-        # Assertion 2 — RFC 2119 structural (only if the artefact was produced)
-        if "rfc2119" in spec_artefacts:
-            ok, msg = _assertion_2_rfc2119_structural(spec_artefacts["rfc2119"])
+            # Assertion 1 — Gherkin structural
+            ok, msg = _assertion_1_gherkin_structural(gherkin)
             if not ok:
-                return _fail(f"RFC 2119 structural check failed: {msg}", 2)
+                return _fail(f"Gherkin structural check failed: {msg}", 1)
 
-        # Assertion 3 — LLM rubric on Gherkin
-        with httpx.Client(timeout=60.0) as client:
-            ok, msg = _assertion_3_rubric(
-                gherkin, client,
-                trace_id=langfuse.get_current_trace_id(),
-                parent_observation_id=langfuse.get_current_observation_id(),
-            )
-        if not ok:
-            return _fail(f"Coverage rubric failed: {msg}", 3)
+            # Assertion 2 — RFC 2119 structural (only if the artefact was produced)
+            if "rfc2119" in spec_artefacts:
+                ok, msg = _assertion_2_rfc2119_structural(spec_artefacts["rfc2119"])
+                if not ok:
+                    return _fail(f"RFC 2119 structural check failed: {msg}", 2)
 
-        span.update(output={"gate_passed": True})
+            # Assertion 3 — LLM rubric on Gherkin
+            with httpx.Client(timeout=60.0) as client:
+                ok, msg = _assertion_3_rubric(
+                    gherkin, client, rubric_system,
+                    trace_id=langfuse.get_current_trace_id(),
+                    parent_observation_id=langfuse.get_current_observation_id(),
+                )
+            if not ok:
+                return _fail(f"Coverage rubric failed: {msg}", 3)
+
+            span.update(output={"gate_passed": True})
 
     langfuse.flush()
     return {"gate_passed": True, "gate_feedback": ""}

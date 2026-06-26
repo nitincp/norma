@@ -12,7 +12,12 @@ Tests cover:
 
 from unittest.mock import MagicMock, patch
 
-from norma.graph.spec_specialist import _STATEMENT_PREFIX, _build_crispe, spec_specialist_node
+from norma.graph.spec_specialist import (
+    _STATEMENT_PREFIX,
+    _build_crispe,
+    _parse_crispe_section,
+    spec_specialist_node,
+)
 from norma.graph.state import NormaState, SpecRecommendation
 
 _RFC2119_REC = SpecRecommendation(
@@ -71,43 +76,72 @@ def _mock_http(content: str) -> MagicMock:
     return http
 
 
+_STUB_CAPACITY = "Act as a senior specification author with deep expertise in the formal standard you have been briefed to apply."
+_STUB_PERSONALITY = "Standards-conformant and precise. Use the exact terminology of the target standard."
+_STUB_EXPERIMENT = "Follow the two-phase structure in STATEMENT exactly: output '## EXAMPLE' then '## ARTEFACT'. Mark inferred content with [implied] inline."
+
+_STUB_PROMPT_TEXT = (
+    f"CAPACITY:\n{_STUB_CAPACITY}\n\n"
+    f"PERSONALITY:\n{_STUB_PERSONALITY}\n\n"
+    f"EXPERIMENT:\n{_STUB_EXPERIMENT}"
+)
+
+
 def _mock_langfuse() -> MagicMock:
     span = MagicMock()
     span.__enter__ = MagicMock(return_value=span)
     span.__exit__ = MagicMock(return_value=False)
+    prompt_client = MagicMock()
+    prompt_client.prompt = _STUB_PROMPT_TEXT
     lf = MagicMock()
     lf.start_as_current_observation.return_value = span
+    lf.get_prompt.return_value = prompt_client
     return lf
 
 
 # ── _build_crispe ──────────────────────────────────────────────────────────────
 
 def test_build_crispe_injects_recommendation_fields():
-    crispe = _build_crispe(_RFC2119_REC)
+    crispe = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT)
     assert crispe.role == _RFC2119_REC["role"]
     assert crispe.insight == _RFC2119_REC["insight"]
-    # statement is the two-phase prefix + the advisor's format rules
     assert _RFC2119_REC["statement"] in crispe.statement
 
 
 def test_build_crispe_statement_contains_two_phase_prefix():
-    crispe = _build_crispe(_RFC2119_REC)
+    crispe = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT)
     assert "Phase 1" in crispe.statement
     assert "Phase 2" in crispe.statement
-    assert "RFC 2119" in crispe.statement  # language name interpolated into prefix
+    assert "RFC 2119" in crispe.statement
 
 
 def test_build_crispe_has_fixed_capacity_and_personality():
-    crispe = _build_crispe(_RFC2119_REC)
+    crispe = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT)
     assert "specification author" in crispe.capacity
     assert "Standards-conformant" in crispe.personality
     assert "[implied]" in crispe.experiment
 
 
 def test_build_crispe_system_prompt_contains_all_fields():
-    prompt = _build_crispe(_RFC2119_REC).system_prompt()
+    prompt = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT).system_prompt()
     for section in ("CAPACITY:", "ROLE:", "INSIGHT:", "STATEMENT:", "PERSONALITY:", "EXPERIMENT:"):
         assert section in prompt
+
+
+def test_parse_crispe_section_extracts_capacity():
+    assert "specification author" in _parse_crispe_section(_STUB_PROMPT_TEXT, "CAPACITY")
+
+
+def test_parse_crispe_section_extracts_personality():
+    assert "Standards-conformant" in _parse_crispe_section(_STUB_PROMPT_TEXT, "PERSONALITY")
+
+
+def test_parse_crispe_section_extracts_experiment():
+    assert "[implied]" in _parse_crispe_section(_STUB_PROMPT_TEXT, "EXPERIMENT")
+
+
+def test_parse_crispe_section_missing_returns_empty():
+    assert _parse_crispe_section(_STUB_PROMPT_TEXT, "ROLE") == ""
 
 
 # ── spec_specialist_node ───────────────────────────────────────────────────────

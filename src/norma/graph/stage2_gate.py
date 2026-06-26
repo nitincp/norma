@@ -19,7 +19,7 @@ Langfuse span: stage2_gate
 import re
 
 import httpx
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 
 from norma import settings
 from norma.graph.state import NormaState
@@ -29,20 +29,8 @@ MAX_REVISIONS = 2
 
 _RFC_KEYWORDS = re.compile(r"\b(MUST NOT|SHOULD NOT|MUST|SHOULD|MAY)\b")
 
-_RUBRIC_SYSTEM = (
-    "You are a strict QA gatekeeper evaluating a standalone technical Gherkin file.\n"
-    "The file contains ONLY @technical scenarios derived from formal spec artefacts. "
-    "Business scenarios are in a separate file — do not expect them here.\n\n"
-    "Check that the technical Gherkin satisfies ALL of the following:\n"
-    "  1. Contains only scenarios tagged @technical (no untagged business scenarios).\n"
-    "  2. The @technical scenarios together cover the key constraints and contracts "
-    "expressed in the provided spec artefacts (RFC keywords, API operations, "
-    "schema rules, etc.).\n\n"
-    "Reply with exactly one of:\n"
-    "  PASS\n"
-    "  FAIL: <concise explanation of what is missing or inadequately covered>\n\n"
-    "No other output."
-)
+_LANGFUSE_PROMPT_NAME = "norma.stage2_gate.rubric"
+_PROMPT_CACHE_TTL = 300  # seconds
 
 
 def _assertion_1_gherkin_technical_structural(gherkin: str) -> tuple[bool, str]:
@@ -69,6 +57,7 @@ def _assertion_2_technical_gherkin_coverage(
     gherkin_technical: str,
     spec_artefacts: dict[str, str],
     client: httpx.Client,
+    rubric_system: str,
     trace_id: str | None = None,
     parent_observation_id: str | None = None,
 ) -> tuple[bool, str]:
@@ -87,7 +76,7 @@ def _assertion_2_technical_gherkin_coverage(
         json={
             "model": MODEL,
             "messages": [
-                {"role": "system", "content": _RUBRIC_SYSTEM},
+                {"role": "system", "content": rubric_system},
                 {"role": "user", "content": user_msg},
             ],
             "max_tokens": 300,
@@ -111,6 +100,7 @@ def stage2_gate_node(state: NormaState) -> NormaState:
     gherkin_technical = state.get("gherkin_technical", "")
     spec_artefacts = state.get("spec_artefacts") or {}
     revision_count = state.get("revision_count", 0)
+    session_id = state.get("session_id")
 
     langfuse = Langfuse(
         public_key=settings.LANGFUSE_PUBLIC_KEY,
@@ -118,46 +108,51 @@ def stage2_gate_node(state: NormaState) -> NormaState:
         host=settings.LANGFUSE_HOST,
     )
 
-    def _fail(msg: str, assertion: int) -> NormaState:
-        span.update(output={"gate_passed": False, "feedback": msg, "assertion": assertion})
-        langfuse.flush()
-        return {
-            "gate_passed": False,
-            "gate_feedback": msg,
-            "revision_count": revision_count + 1,
-        }
+    rubric_system = langfuse.get_prompt(
+        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+    ).prompt
 
-    with langfuse.start_as_current_observation(
-        name="stage2_gate",
-        as_type="span",
-        input={
-            "revision_count": revision_count,
-            "model": MODEL,
-            "artefacts_present": list(spec_artefacts.keys()),
-        },
-    ) as span:
-        # Assertion 1a — technical Gherkin structural
-        ok, msg = _assertion_1_gherkin_technical_structural(gherkin_technical)
-        if not ok:
-            return _fail(f"Technical Gherkin structural check failed: {msg}", 1)
+    with propagate_attributes(session_id=session_id):
+        with langfuse.start_as_current_observation(
+            name="stage2_gate",
+            as_type="span",
+            input={
+                "revision_count": revision_count,
+                "model": MODEL,
+                "artefacts_present": list(spec_artefacts.keys()),
+            },
+        ) as span:
+            def _fail(msg: str, assertion: int) -> NormaState:
+                span.update(output={"gate_passed": False, "feedback": msg, "assertion": assertion})
+                langfuse.flush()
+                return {
+                    "gate_passed": False,
+                    "gate_feedback": msg,
+                    "revision_count": revision_count + 1,
+                }
 
-        # Assertion 1b — RFC 2119 structural (only if artefact was produced)
-        if "rfc2119" in spec_artefacts:
-            ok, msg = _assertion_1_rfc2119_structural(spec_artefacts["rfc2119"])
+            # Assertion 1a — technical Gherkin structural
+            ok, msg = _assertion_1_gherkin_technical_structural(gherkin_technical)
             if not ok:
-                return _fail(f"RFC 2119 structural check failed: {msg}", 1)
+                return _fail(f"Technical Gherkin structural check failed: {msg}", 1)
 
-        # Assertion 2 — LLM rubric: technical Gherkin covers spec constraints
-        with httpx.Client(timeout=60.0) as client:
-            ok, msg = _assertion_2_technical_gherkin_coverage(
-                gherkin_technical, spec_artefacts, client,
-                trace_id=langfuse.get_current_trace_id(),
-                parent_observation_id=langfuse.get_current_observation_id(),
-            )
-        if not ok:
-            return _fail(f"Technical Gherkin coverage rubric failed: {msg}", 2)
+            # Assertion 1b — RFC 2119 structural (only if artefact was produced)
+            if "rfc2119" in spec_artefacts:
+                ok, msg = _assertion_1_rfc2119_structural(spec_artefacts["rfc2119"])
+                if not ok:
+                    return _fail(f"RFC 2119 structural check failed: {msg}", 1)
 
-        span.update(output={"gate_passed": True})
+            # Assertion 2 — LLM rubric: technical Gherkin covers spec constraints
+            with httpx.Client(timeout=60.0) as client:
+                ok, msg = _assertion_2_technical_gherkin_coverage(
+                    gherkin_technical, spec_artefacts, client, rubric_system,
+                    trace_id=langfuse.get_current_trace_id(),
+                    parent_observation_id=langfuse.get_current_observation_id(),
+                )
+            if not ok:
+                return _fail(f"Technical Gherkin coverage rubric failed: {msg}", 2)
+
+            span.update(output={"gate_passed": True})
 
     langfuse.flush()
     return {"gate_passed": True, "gate_feedback": ""}

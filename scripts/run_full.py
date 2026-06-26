@@ -10,10 +10,10 @@ Pipeline 2 — Technical Layer (harness auto-selects rank-1 environment):
 
 Artefacts written to output/YYYY-MM-DD/HHMMSS/:
   req_001.feature            — business Gherkin (SME layer)
-  req_001.environments.json  — ranked environment options
-  req_001.technical.feature  — standalone @technical Gherkin (dev/QA layer)
-  req_001.<key>.md / .yaml   — spec artefacts from specialist(s)
-  run_summary.json           — combined gate results, models, wall time
+  req_001.environments.checkpoint.json — ranked environment options
+  req_001.technical.feature       — standalone @technical Gherkin (dev/QA layer)
+  req_001.<key>.md / .yaml        — spec artefacts from specialist(s)
+  run_summary.debug.json          — combined gate results, models, wall time
 
 Console: one summary line per stage + final artefact list.
 
@@ -23,8 +23,11 @@ Usage:
 
 import json
 import sys
+import uuid
 
-from output_utils import Timer, make_run_dir, write_summary
+from datetime import timezone
+
+from output_utils import Timer, fetch_run_usage, make_run_dir, write_summary
 
 from norma import settings  # noqa: F401 — triggers load_dotenv
 from norma.graph import build_pipeline2, pipeline1
@@ -39,10 +42,12 @@ RAW_REQUIREMENT = (
 def main() -> None:
     total_timer = Timer()
     run_dir = make_run_dir()
+    session_id = str(uuid.uuid4())
 
     # ── Pipeline 1 ────────────────────────────────────────────────────────────
     p1_timer = Timer()
     p1_initial: NormaState = {
+        "session_id": session_id,
         "raw_requirement": RAW_REQUIREMENT,
         "normalised_requirement": "",
         "actors": [],
@@ -60,8 +65,10 @@ def main() -> None:
     gherkin_business = p1.get("gherkin_business") or p1.get("gherkin_content", "")
 
     # Write P1 artefacts
+    normalised_req = p1.get("normalised_requirement", RAW_REQUIREMENT)
+    (run_dir / "req_001.normalised.debug.txt").write_text(normalised_req)
     (run_dir / "req_001.feature").write_text(gherkin_business)
-    (run_dir / "req_001.environments.json").write_text(
+    (run_dir / "req_001.environments.checkpoint.json").write_text(
         json.dumps(env_options, indent=2)
     )
 
@@ -90,6 +97,7 @@ def main() -> None:
     # ── Pipeline 2 ────────────────────────────────────────────────────────────
     p2_timer = Timer()
     p2_initial: NormaState = {
+        "session_id": session_id,
         "raw_requirement": RAW_REQUIREMENT,
         "normalised_requirement": p1.get("normalised_requirement", RAW_REQUIREMENT),
         "actors": p1.get("actors") or [],
@@ -115,6 +123,7 @@ def main() -> None:
 
     # Write P2 artefacts
     (run_dir / "req_001.technical.feature").write_text(gherkin_technical)
+    (run_dir / "req_001.spec_advice.debug.json").write_text(json.dumps(advice, indent=2))
     for key, content in spec_artefacts.items():
         ext = "yaml" if key in ("openapi", "asyncapi") else "md"
         (run_dir / f"req_001.{key}.{ext}").write_text(content)
@@ -127,7 +136,7 @@ def main() -> None:
 
     # run_summary.json — combined
     all_artefacts = (
-        ["req_001.feature", "req_001.environments.json", "req_001.technical.feature"]
+        ["req_001.normalised.debug.txt", "req_001.feature", "req_001.environments.checkpoint.json", "req_001.spec_advice.debug.json", "req_001.technical.feature"]
         + [
             f"req_001.{k}.{'yaml' if k in ('openapi','asyncapi') else 'md'}"
             for k in spec_artefacts
@@ -155,8 +164,24 @@ def main() -> None:
         },
     })
 
+    # Fetch token usage + cost from Langfuse (observations in this run's time window)
+    from datetime import datetime
+    usage = fetch_run_usage(
+        start_utc=total_timer.start_utc,
+        end_utc=datetime.now(timezone.utc),
+        langfuse_host=settings.LANGFUSE_HOST,
+        public_key=settings.LANGFUSE_PUBLIC_KEY,
+        secret_key=settings.LANGFUSE_SECRET_KEY,
+    )
+    # Patch summary with usage
+    summary_path = run_dir / "run_summary.debug.json"
+    summary_data = json.loads(summary_path.read_text())
+    summary_data.update(usage)
+    summary_path.write_text(json.dumps(summary_data, indent=2))
+
     # Final console summary
-    print(f"\nTotal: {total_timer.elapsed()}s — {run_dir}/")
+    print(f"\nTotal: {total_timer.elapsed()}s — ${usage['cost_usd']:.4f}"
+          f" ({usage['prompt_tokens']:,} in / {usage['completion_tokens']:,} out) — {run_dir}/")
     for f in all_artefacts:
         print(f"  {run_dir / f}")
 

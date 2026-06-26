@@ -43,8 +43,8 @@ for rec in advice:
 print()
 
 # Smoke test assertion
-languages = {rec["language"] for rec in advice}
-if "rfc2119" not in languages:
+artefact_keys = {rec["artefact_key"] for rec in advice}
+if "rfc2119" not in artefact_keys:
     print("FAIL — rfc2119 not recommended; the requirement implies constraints")
     sys.exit(1)
 

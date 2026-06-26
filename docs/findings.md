@@ -5,6 +5,37 @@ The format: what happened, what the numbers were, what it means going forward.
 
 ---
 
+## 2026-06-22 — Langfuse prompt management wired; e2e runs (sonnet + grok)
+
+**Context:** All five nodes (intake, gherkin_specialist, cai_gate, spec_advisor, spec_specialist) now fetch their prompts from Langfuse at runtime. `prompts/*.yaml` is the canonical source of truth. Seeded and ran end-to-end.
+
+**Prompt management change:**
+- Nodes no longer contain hardcoded PEF dataclass blocks. Each fetches via `langfuse.get_prompt(name, cache_ttl_seconds=300)`.
+- `seed_prompts.py` is now part of the required workflow before any run after a YAML edit.
+- Trace ↔ prompt version linkage is now live — every Langfuse trace shows which prompt version produced it.
+- `gherkin_specialist.yaml` was stale (insight was requirement-specific instead of generic structural guidance); synced to current code before seeding.
+
+**Sonnet run 1** — P1 PASS, P2 PASS, 0 specialists, `revision_count: 1`.
+- Spec Advisor returned empty advice during pipeline execution despite returning 5 specialists when called in isolation with the same Gherkin + environment input. Intermittent — likely non-determinism at `temperature=0.1` combined with the verbose Gherkin+environment context.
+- `revision_count: 1` indicates Stage 2 Gate failed once and the pipeline cycled before passing.
+
+**Sonnet run 2** — P1 PASS, P2 FAIL, 3 specialists (rfc2119, openapi, jsonschema).
+- Spec Advisor performed correctly. Stage 2 Gate caught real technical Gherkin coverage gaps:
+  - Missing upper-boundary time tests (e.g. 11:59 for Good Morning)
+  - Missing GET /quote 503 scenario
+  - Missing GET /joke 200 scenario
+  - Missing QuoteResponse `"quote"` field rejection test
+- This is the gate working correctly — the technical Gherkin did not fully exercise the spec artefacts. No prompt fix needed; this is a coverage gap the next iteration should close.
+
+**Grok run** — P1 FAIL. Stage 1 Gate caught incomplete business Gherkin: missing the content selection scenario (user prompted to choose Quote or Joke). Known Grok weakness — Gherkin generation quality insufficient for this requirement at current prompt settings.
+
+**Outstanding issues:**
+1. Grok P1 Gherkin incompleteness — needs targeted `gherkin_specialist.yaml` fix or model-specific prompt variant
+2. Sonnet Spec Advisor intermittent empty advice — monitor; if recurring, tighten the one-shot example or add a non-empty assertion in `_parse_advice`
+3. Sonnet Stage 2 Gate coverage failure — expected behaviour; technical Gherkin needs another refinement cycle
+
+---
+
 ## 2026-06-20 — Langfuse cost tracking + observability fixes
 
 **Context:** After the A/B test, Langfuse was showing $0 cost for all traces despite correct token usage counts. Also, LiteLLM-generated OTel spans were appearing as disconnected root traces rather than nested under their Norma node spans.

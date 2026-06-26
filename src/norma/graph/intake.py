@@ -13,38 +13,16 @@ Langfuse span: intake
 import re
 
 import httpx
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 
 from norma import settings
 from norma.graph.state import NormaState
-from norma.pef.costar import COSTAR
-
 MODEL = (
     settings.NORMA_DEFAULT_MODEL
 )  # default: local/qwen2.5-0.5b; override via NORMA_DEFAULT_MODEL
 
-_COSTAR = COSTAR(
-    context=(
-        "You are an analyst in a software specification pipeline. "
-        "You receive raw informal requirement text and normalise it into a precise description."
-    ),
-    objective=(
-        "Rewrite the requirement as one clear paragraph with no ambiguity. "
-        "List every actor (human role or system component that acts). "
-        "List every external dependency (API, service, or data source the system needs)."
-    ),
-    style="Technical and precise. Active voice. No vague terms like 'etc' or 'and so on'.",
-    tone="Analytical and neutral.",
-    audience=(
-        "Engineers who will generate Gherkin, OpenAPI, and C4 specifications from this output."
-    ),
-    response_format=(
-        "Reply using this three-section structure:\n"
-        "NORMALISED: <paragraph>\n"
-        "ACTORS: <bullet list>\n"
-        "EXTERNAL_DEPS: <bullet list or 'none'>"
-    ),
-)
+_LANGFUSE_PROMPT_NAME = "norma.intake"
+_PROMPT_CACHE_TTL = 300  # seconds
 
 
 def _parse_output(text: str) -> tuple[str, list[str], list[str]]:
@@ -108,6 +86,7 @@ def _parse_output(text: str) -> tuple[str, list[str], list[str]]:
 
 def intake_node(state: NormaState) -> NormaState:
     raw = state["raw_requirement"]
+    session_id = state.get("session_id")
 
     langfuse = Langfuse(
         public_key=settings.LANGFUSE_PUBLIC_KEY,
@@ -115,46 +94,49 @@ def intake_node(state: NormaState) -> NormaState:
         host=settings.LANGFUSE_HOST,
     )
 
-    system_prompt = _COSTAR.system_prompt()
+    system_prompt = langfuse.get_prompt(
+        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+    ).prompt
 
-    with langfuse.start_as_current_observation(
-        name="intake",
-        as_type="span",
-        input={"raw_requirement": raw, "model": MODEL},
-    ) as span:
-        with httpx.Client(timeout=40.0) as client:
-            resp = client.post(
-                f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
-                headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
-                json={
-                    "model": MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": raw},
-                    ],
-                    "max_tokens": 512,
-                    "temperature": 0.1,
-                    "metadata": {
-                        "generation_name": "intake-llm-call",
-                        "tags": ["intake", "norma"],
-                        "trace_id": langfuse.get_current_trace_id(),
-                        "parent_observation_id": langfuse.get_current_observation_id(),
+    with propagate_attributes(session_id=session_id):
+        with langfuse.start_as_current_observation(
+            name="intake",
+            as_type="span",
+            input={"raw_requirement": raw, "model": MODEL},
+        ) as span:
+            with httpx.Client(timeout=40.0) as client:
+                resp = client.post(
+                    f"{settings.LITELLM_BASE_URL}/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.LITELLM_MASTER_KEY}"},
+                    json={
+                        "model": MODEL,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": raw},
+                        ],
+                        "max_tokens": 512,
+                        "temperature": 0.1,
+                        "metadata": {
+                            "generation_name": "intake-llm-call",
+                            "tags": ["intake", "norma"],
+                            "trace_id": langfuse.get_current_trace_id(),
+                            "parent_observation_id": langfuse.get_current_observation_id(),
+                        },
                     },
-                },
+                )
+
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"]
+
+            normalised, actors, deps = _parse_output(content)
+
+            span.update(
+                output={
+                    "normalised_requirement": normalised,
+                    "actors": actors,
+                    "external_deps": deps,
+                }
             )
-
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
-
-        normalised, actors, deps = _parse_output(content)
-
-        span.update(
-            output={
-                "normalised_requirement": normalised,
-                "actors": actors,
-                "external_deps": deps,
-            }
-        )
 
     langfuse.flush()
 

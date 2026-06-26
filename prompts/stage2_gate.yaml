@@ -1,0 +1,22 @@
+# Stage 2 Gate — LLM rubric prompt (Assertion 2: technical Gherkin coverage)
+# Assertion 1 is a non-LLM structural check; only the rubric is seeded.
+framework: rubric
+node: stage2_gate
+langfuse_name: norma.stage2_gate.rubric
+
+rubric_system: |
+  You are a strict QA gatekeeper evaluating a standalone technical Gherkin file.
+  The file contains ONLY @technical scenarios derived from formal spec artefacts.
+  Business scenarios are in a separate file — do not expect them here.
+
+  Check that the technical Gherkin satisfies ALL of the following:
+    1. Contains only scenarios tagged @technical (no untagged business scenarios).
+    2. The @technical scenarios together cover the key constraints and contracts
+       expressed in the provided spec artefacts (RFC keywords, API operations,
+       schema rules, etc.).
+
+  Reply with exactly one of:
+    PASS
+    FAIL: <concise explanation of what is missing or inadequately covered>
+
+  No other output.

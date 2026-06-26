@@ -53,6 +53,9 @@ class EnvironmentOption(TypedDict):
 
 
 class NormaState(TypedDict, total=False):
+    # RUN IDENTITY
+    session_id: NotRequired[str]
+
     # INTAKE
     raw_requirement: str
     normalised_requirement: str
@@ -89,3 +92,8 @@ class NormaState(TypedDict, total=False):
     gate_passed: NotRequired[bool]
     gate_feedback: NotRequired[str]
     revision_count: NotRequired[int]
+
+    # PIPELINE 2 — CONFLICT ANALYST (populated on gate failure, consumed by spec_specialist correction)
+    gate_winner_key: NotRequired[str]          # artefact_key of the authoritative spec (higher layer)
+    gate_loser_key: NotRequired[str]           # artefact_key of the spec that must be corrected
+    gate_authoritative_excerpt: NotRequired[str]  # minimal conflicting definition from the winner

@@ -58,10 +58,13 @@ _BASE_STATE: NormaState = {
 
 # ── _parse_advice ──────────────────────────────────────────────────────────────
 
+_WRAPPER = {"specialists": [_VALID_ITEM]}
+
+
 def test_parse_advice_valid_full_recommendation():
-    result = _parse_advice(json.dumps([_VALID_ITEM]))
-    assert len(result) == 1
-    r = result[0]
+    advice = _parse_advice(json.dumps(_WRAPPER))
+    assert len(advice) == 1
+    r = advice[0]
     assert r["language"] == "RFC 2119"
     assert r["artefact_key"] == "rfc2119"
     assert r["requirement_segments"] == _VALID_ITEM["requirement_segments"]
@@ -72,55 +75,63 @@ def test_parse_advice_valid_full_recommendation():
 
 
 def test_parse_advice_multiple_items():
-    result = _parse_advice(json.dumps([_VALID_ITEM, _VALID_ITEM_2]))
-    assert len(result) == 2
-    assert result[1]["artefact_key"] == "openapi"
+    wrapper = {"specialists": [_VALID_ITEM, _VALID_ITEM_2]}
+    advice = _parse_advice(json.dumps(wrapper))
+    assert len(advice) == 2
+    assert advice[1]["artefact_key"] == "openapi"
 
 
 def test_parse_advice_strips_markdown_fences():
-    text = "```json\n" + json.dumps([_VALID_ITEM]) + "\n```"
-    result = _parse_advice(text)
-    assert len(result) == 1
+    text = "```json\n" + json.dumps(_WRAPPER) + "\n```"
+    advice = _parse_advice(text)
+    assert len(advice) == 1
+
+
+def test_parse_advice_legacy_bare_array():
+    """Bare array still parses correctly."""
+    advice = _parse_advice(json.dumps([_VALID_ITEM]))
+    assert len(advice) == 1
 
 
 def test_parse_advice_drops_entry_missing_role():
     item = {**_VALID_ITEM, "role": ""}
-    result = _parse_advice(json.dumps([item]))
-    assert result == []
+    advice = _parse_advice(json.dumps({"specialists": [item]}))
+    assert advice == []
 
 
 def test_parse_advice_drops_entry_missing_requirement_segments():
     item = {k: v for k, v in _VALID_ITEM.items() if k != "requirement_segments"}
-    result = _parse_advice(json.dumps([item]))
-    assert result == []
+    advice = _parse_advice(json.dumps({"specialists": [item]}))
+    assert advice == []
 
 
 def test_parse_advice_drops_entry_missing_insight():
     item = {k: v for k, v in _VALID_ITEM.items() if k != "insight"}
-    result = _parse_advice(json.dumps([item]))
-    assert result == []
+    advice = _parse_advice(json.dumps({"specialists": [item]}))
+    assert advice == []
 
 
 def test_parse_advice_drops_unsafe_artefact_key():
     item = {**_VALID_ITEM, "artefact_key": "../../etc/passwd"}
-    result = _parse_advice(json.dumps([item]))
-    assert result == []
+    advice = _parse_advice(json.dumps({"specialists": [item]}))
+    assert advice == []
 
 
 def test_parse_advice_drops_artefact_key_with_spaces():
     item = {**_VALID_ITEM, "artefact_key": "open api"}
-    result = _parse_advice(json.dumps([item]))
-    assert result == []
+    advice = _parse_advice(json.dumps({"specialists": [item]}))
+    assert advice == []
 
 
 def test_parse_advice_returns_empty_on_corrupt_json():
-    assert _parse_advice("not json at all") == []
+    advice = _parse_advice("not json at all")
+    assert advice == []
 
 
 def test_parse_advice_normalises_artefact_key_to_lowercase():
     item = {**_VALID_ITEM, "artefact_key": "RFC2119"}
-    result = _parse_advice(json.dumps([item]))
-    assert result[0]["artefact_key"] == "rfc2119"
+    advice = _parse_advice(json.dumps({"specialists": [item]}))
+    assert advice[0]["artefact_key"] == "rfc2119"
 
 
 # ── spec_advisor_node ──────────────────────────────────────────────────────────
@@ -144,15 +155,19 @@ def _mock_langfuse() -> MagicMock:
     span = MagicMock()
     span.__enter__ = MagicMock(return_value=span)
     span.__exit__ = MagicMock(return_value=False)
+    prompt_client = MagicMock()
+    prompt_client.prompt = "SYSTEM PROMPT STUB"
     lf = MagicMock()
     lf.start_as_current_observation.return_value = span
+    lf.get_prompt.return_value = prompt_client
     return lf
 
 
 @patch("norma.graph.spec_advisor.Langfuse")
 @patch("norma.graph.spec_advisor.httpx.Client")
 def test_spec_advisor_node_returns_spec_advice(mock_client_cls, mock_langfuse_cls):
-    mock_client_cls.return_value = _mock_http(json.dumps([_VALID_ITEM]))
+    wrapper = {"specialists": [_VALID_ITEM]}
+    mock_client_cls.return_value = _mock_http(json.dumps(wrapper))
     mock_langfuse_cls.return_value = _mock_langfuse()
 
     result = spec_advisor_node(_BASE_STATE)
