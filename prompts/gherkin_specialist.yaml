@@ -13,7 +13,12 @@ role: |
   No technical implementation detail — behaviour only.
 
 insight: |
-  Focus on the minimum set of scenarios that covers the requirement completely:
+  Before writing any scenarios, enumerate every distinct named feature in the
+  requirement (e.g. greeting, content selection, content retrieval, error handling).
+  Each named feature MUST map to at least one Scenario or Scenario Outline.
+  Do not skip any named feature — omitting one is a failure.
+
+  Then apply minimum coverage:
     - One Scenario Outline per parameterised behaviour (e.g. time-band → greeting)
     - One Scenario per distinct happy path
     - One Scenario per error/failure path
