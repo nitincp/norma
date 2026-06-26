@@ -362,9 +362,14 @@ This keeps PEF as the single source of truth while using each model's self-knowl
 - **Depends on:** T1, T2
 
 #### T6 — AB test re-run with all fixes
-- [ ] Re-run `scripts/run_ab_test.py` with all three models after T3–T5 fixes
-- [ ] Target: all three models pass Stage 1 Gate; at least Sonnet and Gemini pass Stage 2 Gate
-- [ ] Record cost per model per node in findings.md
+- [x] Re-run `scripts/run_ab_test.py` with all three models after T3–T5 fixes (2026-06-27)
+- [x] Fixed `_MODEL_KEYS` in `run_ab_test.py` — added `NORMA_DEFAULT_MODEL` (spec specialists were running as sonnet regardless of variant)
+- [x] Record cost per model in findings.md (sonnet $0.1128 / grok $0.0028 / gemini <P1 fail>)
+- [ ] **Target not yet met** — only Sonnet passes P1+P2; Gemini fails P1 (Business Gherkin missing named feature); Grok fails P2 (Spec Advisor still `[]`, Technical Gherkin no Scenario blocks)
+- **Remaining fixes needed (use `run_node.py` for targeted iteration):**
+  1. Gemini Business Gherkin — one-shot example or coverage instruction fix → re-run `run_node.py --model cloud/gemini-flash gherkin_specialist`
+  2. Grok Spec Advisor — reverse prompting loop (max 3 cycles); feed Sonnet PASS `spec_advice.json` as target
+  3. Grok Technical Gherkin — reverse prompting loop after Spec Advisor fix
 - **Depends on:** T3, T4, T5 (all fixes applied)
 
 ---

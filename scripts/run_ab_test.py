@@ -22,8 +22,10 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# All per-node model env vars
+# All per-node model env vars (NORMA_CONFLICT_ANALYST_MODEL intentionally excluded —
+# it's a fixed utility node, not part of the tested creative spec-generation pipeline)
 _MODEL_KEYS = [
+    "NORMA_DEFAULT_MODEL",
     "NORMA_GHERKIN_MODEL",
     "NORMA_ENV_ADVISOR_MODEL",
     "NORMA_SPEC_ADVISOR_MODEL",

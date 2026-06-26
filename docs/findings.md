@@ -5,6 +5,40 @@ The format: what happened, what the numbers were, what it means going forward.
 
 ---
 
+## 2026-06-27 — REQ-005 T6: A/B re-run after T1–T5 fixes
+
+**Context:** `scripts/run_ab_test.py` — three sequential runs after all T1–T5 fixes (granular execution, self-anchoring one-shot, conflict correction loop). Same requirement (REQ-001). `NORMA_DEFAULT_MODEL` added to `_MODEL_KEYS` (was missing — spec specialists previously ran as sonnet regardless of variant).
+
+**Results summary:**
+
+| Variant | Model | P1 | P2 | Wall time | Cost | Specialists | Env selected | Revisions |
+|---|---|---|---|---|---|---|---|---|
+| sonnet | cloud/claude-sonnet | PASS | PASS | 93.9s | $0.1128 | rfc2119, openapi, jsonschema, c4, adr | Node.js 22 / Express | 0 |
+| gemini | cloud/gemini-flash | FAIL | — | 11.3s | — | — | — | 0 |
+| grok | cloud/grok | PASS | FAIL | 36.5s | $0.0028 | (none) | Python 3.12 / stdlib | 2 |
+
+**Findings by variant:**
+
+**Sonnet** — clean PASS/PASS, zero revisions. Conflict correction loop not triggered (T5 fix succeeded — no cross-specialist inconsistency this run). Ran all 5 specialists (rfc2119, openapi, jsonschema, c4, adr). Cost $0.1128, 93.9s total.
+
+**Gemini** — P1 failure in 11.3s. Stage 1 Gate rejected Business Gherkin: `"The requirement to retrieve and display the chosen content is not explicitly captured as a named feature in the Gherkin."` The Business Gherkin Specialist missed a named feature. Run dir not written (P1 fail exits early). Different failure mode from the June 20 run (which was an RFC `# Constraints` heading gap); the `# Constraints` fix (T3 self-anchoring one-shot) appears to have resolved that quirk, but Gherkin feature coverage is now failing. Root cause: gemini-flash Business Gherkin Specialist is producing a feature file that omits one or more scenarios that the gate deems required. The gate prompt says "no boundary/edge-case testing required" but Gemini is dropping a named feature outright.
+
+**Grok** — P1 passed but Spec Advisor returned `[]` again (empty JSON). No specialists ran. Technical Gherkin produced output with no `Scenario` blocks (same structural failure as June 20). Stage 2 Gate failed; revision loop ran 2 cycles but could not fix a structural defect introduced by the specialist. Cost $0.0028 (cheap but useless). The T4 one-shot JSON anchor in the Spec Advisor prompt did not hold for grok-3-mini — model still produces empty or unparseable output.
+
+**T3–T5 impact assessment:**
+- T3 (self-anchoring one-shot): resolved the gemini RFC `# Constraints` heading gap from June 20. Gemini now has a different failure. Net positive.
+- T4 (Spec Advisor one-shot JSON anchor): did not fix grok JSON truncation. Grok Spec Advisor still returns `[]`. One-shot insufficient for this quirk.
+- T5 (conflict correction loop): Sonnet now produces clean P2 PASS without hitting the cross-specialist inconsistency that plagued the June 20 run. The loop works — or Sonnet naturally avoided the conflict this time (non-deterministic). Revision_count=0 suggests no conflict was triggered, not that the loop fixed one.
+
+**Next quirk fixes required:**
+1. **Gemini Business Gherkin** — missing named feature. Fix: audit what scenario gemini omits, add it as a one-shot example or strengthen the coverage instruction in the Business Gherkin YAML. Use `run_node.py` targeting gemini on `gherkin_specialist`.
+2. **Grok Spec Advisor** — `[]` JSON output persists. One-shot insufficient. Next: reverse prompting loop (see REQ-005 Problem 2 fix order) — feed grok a Sonnet PASS `spec_advice.json` and ask it to suggest a prompt that would produce the same. Cap at 3 cycles.
+3. **Grok Technical Gherkin** — no Scenario blocks. Fix order same: one-shot already tried (T3); proceed to reverse prompting.
+
+**Target from backlog:** all three models pass P1; Sonnet and Gemini pass P2. Currently only Sonnet achieves both. T6 is partially done — run complete, failures documented, fixes identified.
+
+---
+
 ## 2026-06-22 — Langfuse prompt management wired; e2e runs (sonnet + grok)
 
 **Context:** All five nodes (intake, gherkin_specialist, cai_gate, spec_advisor, spec_specialist) now fetch their prompts from Langfuse at runtime. `prompts/*.yaml` is the canonical source of truth. Seeded and ran end-to-end.
