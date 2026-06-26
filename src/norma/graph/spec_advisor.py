@@ -24,7 +24,7 @@ import json
 import re
 
 import httpx
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 
 from norma import settings
 from norma.graph.state import NormaState, SpecRecommendation
@@ -37,27 +37,42 @@ _PROMPT_CACHE_TTL = 300  # seconds
 _VALID_ARTEFACT_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
-def _parse_advice(text: str) -> list[SpecRecommendation]:
+def _parse_advice(text: str) -> tuple[list[SpecRecommendation], list[str]]:
     """
-    Parse the LLM JSON output into a list of SpecRecommendation dicts.
-    Drops malformed entries; logs nothing — failures surface as an empty list
-    (pipeline still runs Gherkin-only).
+    Parse the LLM JSON output into (specialists, shared_types).
+
+    Accepts either the new wrapper format {"shared_types": [...], "specialists": [...]}
+    or the legacy bare array format. Drops malformed entries; failures surface as
+    empty lists (pipeline still runs Gherkin-only).
     """
     text = re.sub(r"```[a-z]*\n?", "", text).strip().rstrip("`").strip()
 
     try:
         raw = json.loads(text)
     except json.JSONDecodeError:
+        # Try to salvage a bare array
         m = re.search(r"\[.*\]", text, re.DOTALL)
         if not m:
-            return []
+            return [], []
         try:
             raw = json.loads(m.group())
         except json.JSONDecodeError:
-            return []
+            return [], []
+
+    # Unwrap object format; fall back to bare list
+    shared_types: list[str] = []
+    if isinstance(raw, dict):
+        shared_types = [
+            str(t) for t in raw.get("shared_types", []) if isinstance(t, str) and t.strip()
+        ]
+        items = raw.get("specialists", [])
+    elif isinstance(raw, list):
+        items = raw
+    else:
+        return [], []
 
     advice: list[SpecRecommendation] = []
-    for item in raw:
+    for item in items:
         if not isinstance(item, dict):
             continue
         key = str(item.get("artefact_key", "")).strip().lower()
@@ -83,9 +98,10 @@ def _parse_advice(text: str) -> list[SpecRecommendation]:
                 role=str(item["role"]),
                 insight=str(item["insight"]),
                 statement=str(item["statement"]),
+                shared_types=shared_types,
             )
         )
-    return advice
+    return advice, shared_types
 
 
 def _build_user_message(state: NormaState) -> str:
@@ -121,7 +137,7 @@ def spec_advisor_node(state: NormaState) -> NormaState:
         _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
     ).prompt
 
-    with langfuse.propagate_attributes(session_id=session_id):
+    with propagate_attributes(session_id=session_id):
         with langfuse.start_as_current_observation(
             name="spec_advisor",
             as_type="span",
@@ -155,14 +171,15 @@ def spec_advisor_node(state: NormaState) -> NormaState:
 
             resp.raise_for_status()
             raw_content = resp.json()["choices"][0]["message"]["content"].strip()
-            advice = _parse_advice(raw_content)
+            advice, shared_types = _parse_advice(raw_content)
 
             span.update(output={
                 "specialist_count": len(advice),
                 "languages": [r["language"] for r in advice],
+                "shared_types": shared_types,
                 "raw": raw_content,
             })
 
     langfuse.flush()
 
-    return {"spec_advice": advice}
+    return {"spec_advice": advice, "spec_shared_types": shared_types}

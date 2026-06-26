@@ -4,7 +4,7 @@ Shared output helpers for Norma pipeline scripts.
 All artefacts are written to a dated run folder:
   output/YYYY-MM-DD/HHMMSS/
 
-Each script writes a run_summary.json alongside the artefacts.
+Each script writes a run_summary.debug.json alongside the artefacts.
 """
 
 import base64
@@ -26,9 +26,9 @@ def make_run_dir(base: str = "output") -> Path:
 
 
 def write_summary(run_dir: Path, summary: dict[str, Any]) -> Path:
-    """Write run_summary.json into run_dir; return its path."""
+    """Write run_summary.debug.json into run_dir; return its path."""
     summary["timestamp"] = datetime.now().isoformat()
-    path = run_dir / "run_summary.json"
+    path = run_dir / "run_summary.debug.json"
     path.write_text(json.dumps(summary, indent=2))
     return path
 

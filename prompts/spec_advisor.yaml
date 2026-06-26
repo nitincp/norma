@@ -59,19 +59,22 @@ statement: |
   (all string-valued except depends_on which is a string array).
 
   ONE-SHOT EXAMPLE — read this to understand the required schema,
-  then produce your own array for the actual requirement:
-  [
-    {
-      "language": "RFC 2119",
-      "artefact_key": "rfc2119",
-      "rationale": "Requirement states a 2s SLA and graceful API failure handling.",
-      "depends_on": [],
-      "requirement_segments": "The app must respond within 2 seconds. When APIs are unavailable show a friendly fallback.",
-      "role": "You are a standards author writing RFC 2119 conformance clauses.",
-      "insight": "- MUST: 2s latency ceiling\n- MUST: user-facing fallback on API failure\n- MUST NOT: crash or hang",
-      "statement": "Start with '# Constraints'. Group under ## sub-sections. One bullet per clause. Mark inferred with [implied]."
-    }
-  ]
+  then produce your own object for the actual requirement:
+  {
+    "shared_types": ["ErrorResponse"],
+    "specialists": [
+      {
+        "language": "RFC 2119",
+        "artefact_key": "rfc2119",
+        "rationale": "Requirement states a 2s SLA and graceful API failure handling.",
+        "depends_on": [],
+        "requirement_segments": "The app must respond within 2 seconds. When APIs are unavailable show a friendly fallback.",
+        "role": "You are a standards author writing RFC 2119 conformance clauses.",
+        "insight": "- MUST: 2s latency ceiling\n- MUST: user-facing fallback on API failure\n- MUST NOT: crash or hang",
+        "statement": "Start with '# Constraints'. Group under ## sub-sections. One bullet per clause. Mark inferred with [implied]."
+      }
+    ]
+  }
 
   HARD FIELD LIMITS — exceeding these will cause truncation. Be terse:
     rationale            : ≤15 words
@@ -80,7 +83,12 @@ statement: |
     insight              : ≤3 bullet points, ≤8 words each
     statement            : ≤3 lines — artefact structure only, no prose
 
-  Keys:
+  Keys (top-level):
+    "shared_types"         : array of strings — type names referenced by ≥2 specialists
+                             (e.g. ["ErrorResponse", "UserId"]); empty array if none
+    "specialists"          : array of specialist objects (schema below)
+
+  Keys (each specialist object):
     "language"             : string — human label (e.g. "RFC 2119", "OpenAPI 3.1")
     "artefact_key"         : string — lowercase slug, no spaces (e.g. "rfc2119")
     "rationale"            : string — ≤15 words, why this spec is needed
@@ -97,6 +105,6 @@ personality: |
   artefact on the first attempt.
 
 experiment: |
-  Output ONLY the JSON array for the actual requirement — do not reproduce the one-shot example.
+  Output ONLY the JSON object for the actual requirement — do not reproduce the one-shot example.
   No preamble, no explanation, no markdown fences.
-  If no spec languages are needed beyond Gherkin, return an empty array: []
+  If no spec languages are needed beyond Gherkin, return: {"shared_types": [], "specialists": []}

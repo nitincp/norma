@@ -33,6 +33,7 @@ class SpecRecommendation(TypedDict):
     role: str
     insight: str
     statement: str
+    shared_types: list[str]
 
 
 class EnvironmentOption(TypedDict):
@@ -78,6 +79,7 @@ class NormaState(TypedDict, total=False):
 
     # PIPELINE 2 — SPEC ADVISOR (permanent)
     spec_advice: NotRequired[list[SpecRecommendation]]
+    spec_shared_types: NotRequired[list[str]]
 
     # PIPELINE 2 — SPEC SPECIALIST shell — set by Send per dispatch
     current_recommendation: NotRequired[SpecRecommendation]
@@ -92,3 +94,8 @@ class NormaState(TypedDict, total=False):
     gate_passed: NotRequired[bool]
     gate_feedback: NotRequired[str]
     revision_count: NotRequired[int]
+
+    # PIPELINE 2 — CONFLICT ANALYST (populated on gate failure, consumed by spec_specialist correction)
+    gate_winner_key: NotRequired[str]          # artefact_key of the authoritative spec (higher layer)
+    gate_loser_key: NotRequired[str]           # artefact_key of the spec that must be corrected
+    gate_authoritative_excerpt: NotRequired[str]  # minimal conflicting definition from the winner

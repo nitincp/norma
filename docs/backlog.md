@@ -445,6 +445,67 @@ INTAKE ───────────────────┤             
 
 ---
 
+## REQ-006 — Technical Spec Advisor: Dynamic Technical Layer Selection
+
+**Status:** Planned
+**Added:** 2026-06-27
+
+**Goal:** Replace the hardwired `technical_gherkin_specialist` fan-in with a dynamic technical layer, analogous to how the Spec Advisor drives the spec specialist fan-out. A new **Technical Spec Advisor** reads the `selected_environment` (output of Pipeline 1) and decides which technical layer nodes are needed for this requirement — including whether Technical Gherkin is warranted at all.
+
+**Motivation:** `technical_gherkin_specialist` currently runs unconditionally for every requirement regardless of what spec artefacts were produced or what environment was selected. The same structural hardcoding problem that REQ-003 solved for the spec specialist layer exists here.
+
+**Architecture:**
+
+```
+Pipeline 2 — Technical Layer (revised)
+  [inputs: gherkin_business + selected_environment + spec_artefacts]
+    ├─ SPEC ADVISOR → Send(spec_specialist) × N  (existing)
+    └─ TECHNICAL SPEC ADVISOR
+         └─ routes to selected technical nodes (e.g. technical_gherkin, test_plan, sequence_diagram)
+              ▼
+         STAGE 2 GATE
+```
+
+**Key design decisions (to validate during implementation):**
+- **Technical Spec Advisor** reads `selected_environment` + `spec_artefacts` keys; decides which technical layer artefacts are meaningful for the chosen stack.
+- `technical_gherkin_specialist` becomes one candidate node among several — not the mandatory fan-in.
+- Fan-in to Stage 2 Gate happens after all selected technical nodes complete.
+- If no technical layer nodes are selected, Stage 2 Gate receives only the spec artefacts (valid — some requirements may need no technical Gherkin).
+
+**Candidate technical layer nodes:**
+| Node | When to include |
+|---|---|
+| `technical_gherkin_specialist` | Always when spec artefacts exist (default) |
+| `test_plan_specialist` | When QA test planning is needed (e.g. API, complex flows) |
+| `sequence_diagram_specialist` | When async/event flows are present (AsyncAPI artefact) |
+
+---
+
+### Tasks
+
+#### T1 — Technical Spec Advisor node
+- [ ] CRISPE prompt: reads `selected_environment` + list of `spec_artefact` keys produced; emits structured advice — which technical layer nodes to run and why
+- [ ] `src/norma/graph/technical_spec_advisor.py`
+- [ ] Add `technical_spec_advice` to `NormaState`
+- [ ] Model: `cloud/claude-sonnet` (`NORMA_TECH_SPEC_ADVISOR_MODEL` env var)
+- [ ] Langfuse span: `technical_spec_advisor`
+
+#### T2 — Dynamic routing in Pipeline 2
+- [ ] Graph router reads `technical_spec_advice` and dispatches selected technical nodes via `Send()`
+- [ ] Fan-in to `stage2_gate` after all selected technical nodes complete
+- [ ] Fallback: if advice is empty, route directly to `stage2_gate`
+
+#### T3 — Decouple `technical_gherkin_specialist` from fan-in role
+- [ ] Remove hardwired `spec_specialist → technical_gherkin_specialist` edge
+- [ ] `technical_gherkin_specialist` becomes a `Send()` target like any other technical node
+- [ ] Update Stage 2 Gate: assertions must handle absence of `gherkin_technical` gracefully
+
+#### T4 — End-to-end test
+- [ ] Run Pipeline 2 with a requirement that produces no spec artefacts — verify `technical_gherkin_specialist` does not run
+- [ ] Run with full artefact set — verify Technical Spec Advisor selects `technical_gherkin_specialist` and output is unchanged from current behaviour
+
+---
+
 ## INFRA-001 — Retire Devcontainer
 
 **Status:** Done

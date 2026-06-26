@@ -53,7 +53,8 @@
       "requirement_segments": "greeting \u00b7 quote/joke fetch \u00b7 error handling",
       "role": "RFC 2119 requirements author",
       "insight": "The app has branching user flows and fallible external calls \u2014 RFC 2119 SHALL/SHOULD/MAY keywords make obligations unambiguous.",
-      "statement": "Produce a Markdown RFC 2119 document with sections: # Purpose, # Definitions, # Requirements (with ## Greeting Logic, ## Content Selection, ## Error Handling sub-sections), # Constraints."
+      "statement": "Produce a Markdown RFC 2119 document with sections: # Purpose, # Definitions, # Requirements (with ## Greeting Logic, ## Content Selection, ## Error Handling sub-sections), # Constraints.",
+      "shared_types": []
     },
     {
       "language": "OpenAPI 3.1",
@@ -63,7 +64,8 @@
       "requirement_segments": "API calls for quote/joke \u00b7 error responses",
       "role": "OpenAPI contract author",
       "insight": "The frontend calls the backend for content; a typed contract prevents mismatch.",
-      "statement": "Produce a valid OpenAPI 3.1 YAML with paths /api/quote and /api/joke, 200 and error responses, and shared ErrorResponse schema."
+      "statement": "Produce a valid OpenAPI 3.1 YAML with paths /api/quote and /api/joke, 200 and error responses, and shared ErrorResponse schema.",
+      "shared_types": []
     },
     {
       "language": "JSON Schema",
@@ -75,7 +77,8 @@
       "requirement_segments": "response payloads \u00b7 error objects",
       "role": "JSON Schema author",
       "insight": "Schemas enforce payload contracts at the boundary between third-party APIs and the application.",
-      "statement": "Produce a Markdown document containing JSON Schema definitions for QuoteResponse, JokeResponse, and ErrorResponse."
+      "statement": "Produce a Markdown document containing JSON Schema definitions for QuoteResponse, JokeResponse, and ErrorResponse.",
+      "shared_types": []
     },
     {
       "language": "C4 DSL",
@@ -85,7 +88,8 @@
       "requirement_segments": "full system",
       "role": "C4 architecture author",
       "insight": "Two external systems (Quote API, Joke API) and one internal container (Next.js app) make the C4 context and container diagrams immediately useful.",
-      "statement": "Produce a Structurizr DSL file with a workspace, system context diagram, and container diagram."
+      "statement": "Produce a Structurizr DSL file with a workspace, system context diagram, and container diagram.",
+      "shared_types": []
     }
   ],
   "current_recommendation": {

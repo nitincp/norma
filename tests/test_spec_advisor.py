@@ -58,10 +58,13 @@ _BASE_STATE: NormaState = {
 
 # ── _parse_advice ──────────────────────────────────────────────────────────────
 
+_WRAPPER = {"shared_types": ["ErrorResponse"], "specialists": [_VALID_ITEM]}
+
+
 def test_parse_advice_valid_full_recommendation():
-    result = _parse_advice(json.dumps([_VALID_ITEM]))
-    assert len(result) == 1
-    r = result[0]
+    advice, shared_types = _parse_advice(json.dumps(_WRAPPER))
+    assert len(advice) == 1
+    r = advice[0]
     assert r["language"] == "RFC 2119"
     assert r["artefact_key"] == "rfc2119"
     assert r["requirement_segments"] == _VALID_ITEM["requirement_segments"]
@@ -69,58 +72,71 @@ def test_parse_advice_valid_full_recommendation():
     assert r["insight"] == _VALID_ITEM["insight"]
     assert r["statement"] == _VALID_ITEM["statement"]
     assert r["depends_on"] == []
+    assert shared_types == ["ErrorResponse"]
+    assert r["shared_types"] == ["ErrorResponse"]
 
 
 def test_parse_advice_multiple_items():
-    result = _parse_advice(json.dumps([_VALID_ITEM, _VALID_ITEM_2]))
-    assert len(result) == 2
-    assert result[1]["artefact_key"] == "openapi"
+    wrapper = {"shared_types": [], "specialists": [_VALID_ITEM, _VALID_ITEM_2]}
+    advice, shared_types = _parse_advice(json.dumps(wrapper))
+    assert len(advice) == 2
+    assert advice[1]["artefact_key"] == "openapi"
+    assert shared_types == []
 
 
 def test_parse_advice_strips_markdown_fences():
-    text = "```json\n" + json.dumps([_VALID_ITEM]) + "\n```"
-    result = _parse_advice(text)
-    assert len(result) == 1
+    text = "```json\n" + json.dumps(_WRAPPER) + "\n```"
+    advice, _ = _parse_advice(text)
+    assert len(advice) == 1
+
+
+def test_parse_advice_legacy_bare_array():
+    """Bare array (no shared_types wrapper) still parses correctly."""
+    advice, shared_types = _parse_advice(json.dumps([_VALID_ITEM]))
+    assert len(advice) == 1
+    assert shared_types == []
 
 
 def test_parse_advice_drops_entry_missing_role():
     item = {**_VALID_ITEM, "role": ""}
-    result = _parse_advice(json.dumps([item]))
-    assert result == []
+    advice, _ = _parse_advice(json.dumps({"shared_types": [], "specialists": [item]}))
+    assert advice == []
 
 
 def test_parse_advice_drops_entry_missing_requirement_segments():
     item = {k: v for k, v in _VALID_ITEM.items() if k != "requirement_segments"}
-    result = _parse_advice(json.dumps([item]))
-    assert result == []
+    advice, _ = _parse_advice(json.dumps({"shared_types": [], "specialists": [item]}))
+    assert advice == []
 
 
 def test_parse_advice_drops_entry_missing_insight():
     item = {k: v for k, v in _VALID_ITEM.items() if k != "insight"}
-    result = _parse_advice(json.dumps([item]))
-    assert result == []
+    advice, _ = _parse_advice(json.dumps({"shared_types": [], "specialists": [item]}))
+    assert advice == []
 
 
 def test_parse_advice_drops_unsafe_artefact_key():
     item = {**_VALID_ITEM, "artefact_key": "../../etc/passwd"}
-    result = _parse_advice(json.dumps([item]))
-    assert result == []
+    advice, _ = _parse_advice(json.dumps({"shared_types": [], "specialists": [item]}))
+    assert advice == []
 
 
 def test_parse_advice_drops_artefact_key_with_spaces():
     item = {**_VALID_ITEM, "artefact_key": "open api"}
-    result = _parse_advice(json.dumps([item]))
-    assert result == []
+    advice, _ = _parse_advice(json.dumps({"shared_types": [], "specialists": [item]}))
+    assert advice == []
 
 
 def test_parse_advice_returns_empty_on_corrupt_json():
-    assert _parse_advice("not json at all") == []
+    advice, shared_types = _parse_advice("not json at all")
+    assert advice == []
+    assert shared_types == []
 
 
 def test_parse_advice_normalises_artefact_key_to_lowercase():
     item = {**_VALID_ITEM, "artefact_key": "RFC2119"}
-    result = _parse_advice(json.dumps([item]))
-    assert result[0]["artefact_key"] == "rfc2119"
+    advice, _ = _parse_advice(json.dumps({"shared_types": [], "specialists": [item]}))
+    assert advice[0]["artefact_key"] == "rfc2119"
 
 
 # ── spec_advisor_node ──────────────────────────────────────────────────────────
@@ -155,7 +171,8 @@ def _mock_langfuse() -> MagicMock:
 @patch("norma.graph.spec_advisor.Langfuse")
 @patch("norma.graph.spec_advisor.httpx.Client")
 def test_spec_advisor_node_returns_spec_advice(mock_client_cls, mock_langfuse_cls):
-    mock_client_cls.return_value = _mock_http(json.dumps([_VALID_ITEM]))
+    wrapper = {"shared_types": ["ErrorResponse"], "specialists": [_VALID_ITEM]}
+    mock_client_cls.return_value = _mock_http(json.dumps(wrapper))
     mock_langfuse_cls.return_value = _mock_langfuse()
 
     result = spec_advisor_node(_BASE_STATE)
@@ -164,6 +181,7 @@ def test_spec_advisor_node_returns_spec_advice(mock_client_cls, mock_langfuse_cl
     assert len(result["spec_advice"]) == 1
     assert result["spec_advice"][0]["artefact_key"] == "rfc2119"
     assert result["spec_advice"][0]["role"] == _VALID_ITEM["role"]
+    assert result["spec_shared_types"] == ["ErrorResponse"]
 
 
 @patch("norma.graph.spec_advisor.Langfuse")
@@ -175,6 +193,7 @@ def test_spec_advisor_node_returns_empty_on_bad_llm_output(mock_client_cls, mock
     result = spec_advisor_node(_BASE_STATE)
 
     assert result["spec_advice"] == []
+    assert result["spec_shared_types"] == []
 
 
 # ── _dispatch_specialists ─────────────────────────────────────────────────────
@@ -187,6 +206,7 @@ def test_dispatch_sends_one_per_recommendation():
     rec = SpecRecommendation(
         language="RFC 2119", artefact_key="rfc2119", rationale="x",
         depends_on=[], requirement_segments="seg", role="r", insight="i", statement="s",
+        shared_types=[],
     )
     state: NormaState = {**_BASE_STATE, "spec_advice": [rec]}
     result = _dispatch_specialists(state)
@@ -206,10 +226,10 @@ def test_dispatch_sends_multiple_in_parallel():
     recs = [
         SpecRecommendation(language="RFC 2119", artefact_key="rfc2119", rationale="x",
                            depends_on=[], requirement_segments="seg1",
-                           role="r", insight="i", statement="s"),
+                           role="r", insight="i", statement="s", shared_types=[]),
         SpecRecommendation(language="OpenAPI 3.1", artefact_key="openapi", rationale="y",
                            depends_on=[], requirement_segments="seg2",
-                           role="r2", insight="i2", statement="s2"),
+                           role="r2", insight="i2", statement="s2", shared_types=[]),
     ]
     state: NormaState = {**_BASE_STATE, "spec_advice": recs}
     result = _dispatch_specialists(state)

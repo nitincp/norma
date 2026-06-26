@@ -10,10 +10,10 @@ Pipeline 2 — Technical Layer (harness auto-selects rank-1 environment):
 
 Artefacts written to output/YYYY-MM-DD/HHMMSS/:
   req_001.feature            — business Gherkin (SME layer)
-  req_001.environments.json  — ranked environment options
-  req_001.technical.feature  — standalone @technical Gherkin (dev/QA layer)
-  req_001.<key>.md / .yaml   — spec artefacts from specialist(s)
-  run_summary.json           — combined gate results, models, wall time
+  req_001.environments.checkpoint.json — ranked environment options
+  req_001.technical.feature       — standalone @technical Gherkin (dev/QA layer)
+  req_001.<key>.md / .yaml        — spec artefacts from specialist(s)
+  run_summary.debug.json          — combined gate results, models, wall time
 
 Console: one summary line per stage + final artefact list.
 
@@ -66,9 +66,9 @@ def main() -> None:
 
     # Write P1 artefacts
     normalised_req = p1.get("normalised_requirement", RAW_REQUIREMENT)
-    (run_dir / "req_001.normalised.txt").write_text(normalised_req)
+    (run_dir / "req_001.normalised.debug.txt").write_text(normalised_req)
     (run_dir / "req_001.feature").write_text(gherkin_business)
-    (run_dir / "req_001.environments.json").write_text(
+    (run_dir / "req_001.environments.checkpoint.json").write_text(
         json.dumps(env_options, indent=2)
     )
 
@@ -123,7 +123,7 @@ def main() -> None:
 
     # Write P2 artefacts
     (run_dir / "req_001.technical.feature").write_text(gherkin_technical)
-    (run_dir / "req_001.spec_advice.json").write_text(json.dumps(advice, indent=2))
+    (run_dir / "req_001.spec_advice.debug.json").write_text(json.dumps(advice, indent=2))
     for key, content in spec_artefacts.items():
         ext = "yaml" if key in ("openapi", "asyncapi") else "md"
         (run_dir / f"req_001.{key}.{ext}").write_text(content)
@@ -136,7 +136,7 @@ def main() -> None:
 
     # run_summary.json — combined
     all_artefacts = (
-        ["req_001.normalised.txt", "req_001.feature", "req_001.environments.json", "req_001.spec_advice.json", "req_001.technical.feature"]
+        ["req_001.normalised.debug.txt", "req_001.feature", "req_001.environments.checkpoint.json", "req_001.spec_advice.debug.json", "req_001.technical.feature"]
         + [
             f"req_001.{k}.{'yaml' if k in ('openapi','asyncapi') else 'md'}"
             for k in spec_artefacts
@@ -174,7 +174,7 @@ def main() -> None:
         secret_key=settings.LANGFUSE_SECRET_KEY,
     )
     # Patch summary with usage
-    summary_path = run_dir / "run_summary.json"
+    summary_path = run_dir / "run_summary.debug.json"
     summary_data = json.loads(summary_path.read_text())
     summary_data.update(usage)
     summary_path.write_text(json.dumps(summary_data, indent=2))

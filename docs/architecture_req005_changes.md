@@ -1,7 +1,7 @@
 # Architecture Delta — REQ-005
 
 **REQ:** REQ-005 — Node quality baseline, granular execution, cross-model consistency  
-**Status:** In progress (T1–T4 done, T5–T6 pending)  
+**Status:** In progress (T1–T5 done and validated, T6 pending)  
 **Merge into ARCHITECTURE.md when:** REQ-005 closes (all tasks done)  
 **Delete this file after merge.**
 
@@ -23,27 +23,82 @@ flowchart LR
     P1 -.->|save checkpoint| F
 ```
 
-### Pipeline 2 — shared_types contract (T5, pending)
+### Pipeline 2 — shared_types contract + conflict correction loop (T5, done)
 
-Current Pipeline 2: Spec Advisor fans out to specialists with no shared contract. Each specialist independently defines types like `ErrorResponse`, causing cross-artefact inconsistency caught only at Stage 2 Gate.
+T5 addresses cross-artefact type inconsistency in two complementary ways:
 
-**Current:**
+**Part 1 — Shared type names (upfront hint):** Spec Advisor emits a `shared_types[]` list of type names used by ≥2 specialists (e.g. `["ErrorResponse", "ContentResponse"]`). Each specialist receives these names injected into their `insight` field. This nudges consistent naming on the first pass but does not enforce field shapes.
+
+**Part 2 — Hierarchical correction loop (gate feedback path):** When Stage 2 Gate fails, a new Conflict Analyst node diagnoses the conflict and a targeted correction re-runs only the offending specialist.
+
+**Current (before T5):**
 
 ```mermaid
 flowchart LR
-    SA[Spec Advisor\nspec_advice] -->|Send × N\nrole · insight · statement| SS[Spec Specialist × N]
+    SA[Spec Advisor\nspec_advice] -->|Send × N| SS[Spec Specialist × N]
     SS -->|fan-in| TGS[Technical Gherkin Specialist]
+    TGS --> G2[Stage 2 Gate]
+    G2 -->|FAIL revise| TGS
+    G2 -->|PASS| END([END])
 ```
 
 **After T5:**
 
 ```mermaid
 flowchart LR
-    SA[Spec Advisor\nspec_advice\n+ shared_types] -->|Send × N\nrole · insight · statement\n+ shared_types contract| SS[Spec Specialist × N]
+    SA[Spec Advisor\nspec_advice + shared_types] -->|Send × N\n+ shared_types hint| SS[Spec Specialist × N]
     SS -->|fan-in| TGS[Technical Gherkin Specialist]
+    TGS --> G2[Stage 2 Gate]
+    G2 -->|PASS| END([END])
+    G2 -->|FAIL revise| CA[Conflict Analyst\ngemini-flash]
+    CA -->|winner_key · loser_key\nauthoritative_excerpt| SS2[Spec Specialist\ncorrection mode]
+    SS2 --> TGS
+    G2 -->|FAIL halt| END
 ```
 
-`shared_types[]` is a pre-agreed list of type names emitted by the Spec Advisor and injected into every specialist's `insight` field before they run in parallel. Specialists reference the contract, not define it independently.
+**Correction loop mechanics:**
+
+1. Stage 2 Gate fails → `gate_feedback` (plain string, unchanged)
+2. **Conflict Analyst** (new node, `cloud/gemini-flash`):
+   - Input: `gate_feedback` + all `spec_artefacts` + `spec_advice` (dependency map)
+   - LLM identifies the ROOT conflict between upstream specs (openapi, jsonschema, rfc2119, etc.) — Gherkin failures are treated as symptoms, not root causes
+   - LLM extracts minimal authoritative excerpt from the winner artefact
+   - Code resolves winner/loser via `depends_on`: the artefact that others depend on wins (higher layer)
+   - Output: `gate_winner_key`, `gate_loser_key`, `gate_authoritative_excerpt`
+3. **Spec Specialist (correction mode)** — loser specialist only, lean prompt:
+   - Receives: its previous artefact + `gate_feedback` + `gate_authoritative_excerpt`
+   - Instruction: correct only the conflicting definition, return full artefact
+   - Overwrites `spec_artefacts[loser_key]` via existing merge reducer
+4. Technical Gherkin Specialist re-runs → Stage 2 Gate re-runs
+5. Max 2 revisions (existing `MAX_REVISIONS` cap); on exhaustion: halt
+
+**Layer hierarchy (from `depends_on`):**
+
+| Layer | Standards | Role |
+|---|---|---|
+| 1 — Constraints | RFC 2119, ADR | Authoritative — never corrected |
+| 2 — Architecture | C4 / Structurizr | Authoritative — never corrected |
+| 3 — Interface | OpenAPI, AsyncAPI | Authoritative over Layer 4 |
+| 4 — Validation | JSON Schema | Corrected to conform to Layer 3 |
+| 5 — Tests | Technical Gherkin | Corrected to conform to all layers |
+
+Edge case (same-layer conflict, no `depends_on` relationship): code falls back to LLM's winner/loser determination. Same-layer conflicts are rare (RFC 2119 and ADR address different claim types).
+
+**State delta:**
+
+| Key | Change |
+|---|---|
+| `spec_advice[].shared_types` | Existing field — list of shared type names (name-only) |
+| `gate_winner_key` | New — artefact_key of the authoritative spec on gate failure |
+| `gate_loser_key` | New — artefact_key of the spec to be corrected |
+| `gate_authoritative_excerpt` | New — minimal conflicting definition from the winner |
+
+**New files:**
+
+| File | Purpose |
+|---|---|
+| `src/norma/graph/conflict_analyst.py` | Conflict Analyst node |
+| `prompts/conflict_analyst.yaml` | Prompt seeded as `norma.conflict_analyst` |
 
 ---
 
@@ -120,24 +175,6 @@ Root cause of prior silent failures: when 4–5 verbose specialists were generat
 
 ## Changes pending (T5–T6)
 
-### T5 — SPEC ADVISOR output — new `shared_types[]` field
-
-`SpecRecommendation` gains a `shared_types[]` field: type names that multiple specialists will reference (e.g. `ErrorResponse`). Spec Advisor populates it; each specialist receives it in the `insight` field as a pre-agreed contract.
-
-**State delta:**
-
-| Key | Change |
-|---|---|
-| `spec_advice[].shared_types` | New field on `SpecRecommendation` — list of shared type names |
-
-**Node delta — SPEC ADVISOR:**
-> Also emits `shared_types[]` per recommendation — type names pre-agreed across specialists.
-
-**Node delta — SPEC SPECIALIST:**
-> Receives `shared_types` via `insight` field: *"The following shared types are pre-agreed: {shared_types}. Use these exact names and shapes."*
-
-**Why this matters for the architecture:** Stage 2 Gate currently catches cross-artefact type inconsistency as a symptom. T5 fixes the root cause — no shared contract during parallel fan-out. After T5, the gate validates conformance to a contract that was established before specialists ran.
-
 ### T6 — No architecture change
 
-A/B re-run across all three models. Results go to `findings.md`. No structural change to nodes, state, or pipelines.
+A/B re-run across all three models after T3–T5 fixes. Results go to `findings.md`. No structural change to nodes, state, or pipelines.

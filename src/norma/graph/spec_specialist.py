@@ -25,7 +25,7 @@ Langfuse span: spec_specialist.<artefact_key>
 import re
 
 import httpx
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 
 from norma import settings
 from norma.graph.state import NormaState, SpecRecommendation
@@ -63,16 +63,55 @@ def _build_crispe(
     capacity: str,
     personality: str,
     experiment: str,
+    shared_types: list[str],
 ) -> CRISPE:
     statement = _STATEMENT_PREFIX.format(language=rec["language"]) + rec["statement"]
+    insight = rec["insight"]
+    if shared_types:
+        types_str = "\n".join(f"  - {t}" for t in shared_types)
+        insight = (
+            f"Shared type contract — ALL specialists use EXACTLY these field names and types:\n"
+            f"{types_str}\n"
+            + insight
+        )
     return CRISPE(
         capacity=capacity,
         role=rec["role"],
-        insight=rec["insight"],
+        insight=insight,
         statement=statement,
         personality=personality,
         experiment=experiment,
     )
+
+
+def _is_correction_mode(state: NormaState, rec: SpecRecommendation) -> bool:
+    """True when this invocation is a targeted correction after a gate failure."""
+    return (
+        bool(state.get("gate_feedback"))
+        and (state.get("revision_count", 0) > 0)
+        and rec["artefact_key"] == state.get("gate_loser_key", "")
+    )
+
+
+def _build_correction_messages(
+    rec: SpecRecommendation,
+    gate_feedback: str,
+    previous_artefact: str,
+    authoritative_excerpt: str,
+) -> tuple[str, str]:
+    """Build (system, user) messages for correction mode — lean, no CRISPE overhead."""
+    system = (
+        f"You are {rec['role']}. "
+        f"Your previous {rec['language']} artefact has a cross-spec inconsistency. "
+        f"Correct only the conflicting definition. Keep everything else unchanged."
+    )
+    user = (
+        f"Gate feedback: {gate_feedback}\n\n"
+        f"Conform to this authoritative definition:\n{authoritative_excerpt}\n\n"
+        f"Your previous artefact:\n{previous_artefact}\n\n"
+        f"Return the full corrected artefact."
+    )
+    return system, user
 
 
 def spec_specialist_node(state: NormaState) -> NormaState:
@@ -85,23 +124,35 @@ def spec_specialist_node(state: NormaState) -> NormaState:
         host=settings.LANGFUSE_HOST,
     )
 
-    prompt_text = langfuse.get_prompt(
-        _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
-    ).prompt
+    correction_mode = _is_correction_mode(state, rec)
 
-    capacity = _parse_crispe_section(prompt_text, "CAPACITY")
-    personality = _parse_crispe_section(prompt_text, "PERSONALITY")
-    experiment = _parse_crispe_section(prompt_text, "EXPERIMENT")
+    if correction_mode:
+        previous_artefact = (state.get("spec_artefacts") or {}).get(rec["artefact_key"], "")
+        system_prompt, user_message = _build_correction_messages(
+            rec,
+            gate_feedback=state.get("gate_feedback", ""),
+            previous_artefact=previous_artefact,
+            authoritative_excerpt=state.get("gate_authoritative_excerpt", ""),
+        )
+    else:
+        prompt_text = langfuse.get_prompt(
+            _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
+        ).prompt
 
-    system_prompt = _build_crispe(rec, capacity, personality, experiment).system_prompt()
-    user_message = (
-        f"REQUIREMENT SEGMENTS (your scope — do not address anything outside this):\n"
-        f"{rec['requirement_segments']}\n\n"
-        f"SPEC LANGUAGE: {rec['language']}\n"
-        f"RATIONALE: {rec['rationale']}"
-    )
+        capacity = _parse_crispe_section(prompt_text, "CAPACITY")
+        personality = _parse_crispe_section(prompt_text, "PERSONALITY")
+        experiment = _parse_crispe_section(prompt_text, "EXPERIMENT")
 
-    with langfuse.propagate_attributes(session_id=session_id):
+        shared_types = state.get("spec_shared_types") or []
+        system_prompt = _build_crispe(rec, capacity, personality, experiment, shared_types).system_prompt()
+        user_message = (
+            f"REQUIREMENT SEGMENTS (your scope — do not address anything outside this):\n"
+            f"{rec['requirement_segments']}\n\n"
+            f"SPEC LANGUAGE: {rec['language']}\n"
+            f"RATIONALE: {rec['rationale']}"
+        )
+
+    with propagate_attributes(session_id=session_id):
         with langfuse.start_as_current_observation(
             name=f"spec_specialist.{rec['artefact_key']}",
             as_type="span",
@@ -109,6 +160,7 @@ def spec_specialist_node(state: NormaState) -> NormaState:
                 "artefact_key": rec["artefact_key"],
                 "language": rec["language"],
                 "model": MODEL,
+                "correction_mode": correction_mode,
             },
         ) as span:
             with httpx.Client(timeout=120.0) as client:

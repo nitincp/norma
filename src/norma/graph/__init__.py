@@ -28,6 +28,7 @@ from norma.graph.cai_gate import cai_gate_node, route_after_gate
 from norma.graph.environment_advisor import environment_advisor_node
 from norma.graph.gherkin_specialist import gherkin_specialist_node
 from norma.graph.intake import intake_node
+from norma.graph.conflict_analyst import conflict_analyst_node
 from norma.graph.spec_advisor import spec_advisor_node
 from norma.graph.spec_specialist import spec_specialist_node
 from norma.graph.stage1_gate import stage1_gate_node
@@ -87,15 +88,28 @@ def _dispatch_specialists(state: NormaState) -> list[Send] | str:
     return sends if sends else "cai_gate"
 
 
+def _dispatch_correction(state: NormaState) -> list[Send] | str:
+    """
+    After conflict_analyst: Send the loser specialist for targeted correction.
+    Falls back to technical_gherkin_specialist if no loser can be identified.
+    """
+    loser_key = state.get("gate_loser_key", "")
+    advice = state.get("spec_advice") or []
+    loser_rec = next((r for r in advice if r["artefact_key"] == loser_key), None)
+    if loser_rec:
+        return [Send("spec_specialist", {**state, "current_recommendation": loser_rec})]
+    return "technical_gherkin_specialist"
+
+
 def _build_pipeline2() -> StateGraph:
     """
     [gherkin_business + selected_environment]
       ├─ spec_advisor → Send(spec_specialist) × N
       │                       └─ technical_gherkin_specialist (fan-in)
       └─ (direct edge to technical_gherkin_specialist when no specialists)
-           └─ stage2_gate → END / revise(technical_gherkin_specialist) / halt
+           └─ stage2_gate → END / conflict_analyst / halt
+                                └─ Send(spec_specialist, correction) → technical_gherkin_specialist
     """
-    # Import here to avoid circular import at module level
     from norma.graph.stage2_gate import route_after_stage2, stage2_gate_node
     from norma.graph.technical_gherkin_specialist import technical_gherkin_specialist_node
 
@@ -105,6 +119,7 @@ def _build_pipeline2() -> StateGraph:
     g.add_node("spec_specialist", spec_specialist_node)
     g.add_node("technical_gherkin_specialist", technical_gherkin_specialist_node)
     g.add_node("stage2_gate", stage2_gate_node)
+    g.add_node("conflict_analyst", conflict_analyst_node)
 
     g.set_entry_point("spec_advisor")
 
@@ -117,17 +132,25 @@ def _build_pipeline2() -> StateGraph:
         },
     )
     g.add_edge("spec_specialist", "technical_gherkin_specialist")
+    g.add_edge("technical_gherkin_specialist", "stage2_gate")
 
     g.add_conditional_edges(
         "stage2_gate",
         route_after_stage2,
         {
             "end": END,
-            "revise": "technical_gherkin_specialist",
+            "revise": "conflict_analyst",
             "halt": END,
         },
     )
-    g.add_edge("technical_gherkin_specialist", "stage2_gate")
+    g.add_conditional_edges(
+        "conflict_analyst",
+        _dispatch_correction,
+        {
+            "spec_specialist": "spec_specialist",
+            "technical_gherkin_specialist": "technical_gherkin_specialist",
+        },
+    )
 
     return g
 

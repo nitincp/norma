@@ -11,7 +11,7 @@ then runs:
 Artefacts written to the same dated folder (or a new one if run standalone):
   req_001.technical.feature  — standalone @technical Gherkin
   req_001.<key>.md / .yaml   — spec artefacts
-  run_summary.json           — updated with Pipeline 2 results
+  run_summary.debug.json     — updated with Pipeline 2 results
 
 Usage:
     uv run python scripts/run_pipeline2.py
@@ -40,14 +40,14 @@ def _find_latest_run_dir() -> Path | None:
         return None
     runs = sorted(base.glob("????-??-??/??????"), reverse=True)
     for r in runs:
-        if (r / "req_001.feature").exists() and (r / "req_001.environments.json").exists():
+        if (r / "req_001.feature").exists() and (r / "req_001.environments.checkpoint.json").exists():
             return r
     return None
 
 
 def _load_p1_outputs(run_dir: Path) -> tuple[str, EnvironmentOption]:
     feature = run_dir / "req_001.feature"
-    env_file = run_dir / "req_001.environments.json"
+    env_file = run_dir / "req_001.environments.checkpoint.json"
 
     if not feature.exists() or not env_file.exists():
         print(
@@ -59,7 +59,7 @@ def _load_p1_outputs(run_dir: Path) -> tuple[str, EnvironmentOption]:
 
     environments: list[EnvironmentOption] = json.loads(env_file.read_text())
     if not environments:
-        print("ERROR: No environment options in req_001.environments.json.", file=sys.stderr)
+        print("ERROR: No environment options in req_001.environments.checkpoint.json.", file=sys.stderr)
         sys.exit(1)
 
     return feature.read_text(), min(environments, key=lambda e: e["rank"])

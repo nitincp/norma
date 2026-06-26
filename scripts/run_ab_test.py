@@ -67,8 +67,8 @@ def _run_variant(label: str, model: str) -> dict:
 
     # Load run_summary.json if available
     summary: dict = {}
-    if run_dir and (run_dir / "run_summary.json").exists():
-        summary = json.loads((run_dir / "run_summary.json").read_text())
+    if run_dir and (run_dir / "run_summary.debug.json").exists():
+        summary = json.loads((run_dir / "run_summary.debug.json").read_text())
 
     return {
         "label": label,

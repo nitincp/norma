@@ -36,6 +36,7 @@ _RFC2119_REC = SpecRecommendation(
         "Group MUST/SHOULD/MAY statements under ## themed sub-sections. "
         "One bullet per statement. Mark inferred constraints with [implied]."
     ),
+    shared_types=[],
 )
 
 _RFC2119_ARTEFACT = (
@@ -102,28 +103,28 @@ def _mock_langfuse() -> MagicMock:
 # ── _build_crispe ──────────────────────────────────────────────────────────────
 
 def test_build_crispe_injects_recommendation_fields():
-    crispe = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT)
+    crispe = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT, [])
     assert crispe.role == _RFC2119_REC["role"]
     assert crispe.insight == _RFC2119_REC["insight"]
     assert _RFC2119_REC["statement"] in crispe.statement
 
 
 def test_build_crispe_statement_contains_two_phase_prefix():
-    crispe = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT)
+    crispe = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT, [])
     assert "Phase 1" in crispe.statement
     assert "Phase 2" in crispe.statement
     assert "RFC 2119" in crispe.statement
 
 
 def test_build_crispe_has_fixed_capacity_and_personality():
-    crispe = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT)
+    crispe = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT, [])
     assert "specification author" in crispe.capacity
     assert "Standards-conformant" in crispe.personality
     assert "[implied]" in crispe.experiment
 
 
 def test_build_crispe_system_prompt_contains_all_fields():
-    prompt = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT).system_prompt()
+    prompt = _build_crispe(_RFC2119_REC, _STUB_CAPACITY, _STUB_PERSONALITY, _STUB_EXPERIMENT, []).system_prompt()
     for section in ("CAPACITY:", "ROLE:", "INSIGHT:", "STATEMENT:", "PERSONALITY:", "EXPERIMENT:"):
         assert section in prompt
 

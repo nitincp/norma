@@ -8,7 +8,7 @@ Langfuse span: gherkin_specialist
 """
 
 import httpx
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 
 from norma import settings
 from norma.graph.state import NormaState
@@ -32,7 +32,7 @@ def gherkin_specialist_node(state: NormaState) -> NormaState:
         _LANGFUSE_PROMPT_NAME, cache_ttl_seconds=_PROMPT_CACHE_TTL
     ).prompt
 
-    with langfuse.propagate_attributes(session_id=session_id):
+    with propagate_attributes(session_id=session_id):
         with langfuse.start_as_current_observation(
             name="gherkin_specialist",
             as_type="span",
