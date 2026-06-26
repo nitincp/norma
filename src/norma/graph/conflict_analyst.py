@@ -109,7 +109,7 @@ def conflict_analyst_node(state: NormaState) -> NormaState:
                         "metadata": {
                             "generation_name": "conflict-analyst-llm-call",
                             "tags": ["conflict_analyst", "norma"],
-                            "trace_id": langfuse.get_current_trace_id(),
+                            "existing_trace_id": langfuse.get_current_trace_id(),
                             "parent_observation_id": langfuse.get_current_observation_id(),
                         },
                     },

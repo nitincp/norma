@@ -119,7 +119,7 @@ def intake_node(state: NormaState) -> NormaState:
                         "metadata": {
                             "generation_name": "intake-llm-call",
                             "tags": ["intake", "norma"],
-                            "trace_id": langfuse.get_current_trace_id(),
+                            "existing_trace_id": langfuse.get_current_trace_id(),
                             "parent_observation_id": langfuse.get_current_observation_id(),
                         },
                     },

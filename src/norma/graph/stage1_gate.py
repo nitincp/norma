@@ -60,7 +60,7 @@ def _assertion_2_gherkin_coverage(
             "metadata": {
                 "generation_name": "stage1-gate-rubric-call",
                 "tags": ["stage1_gate", "norma"],
-                "trace_id": trace_id,
+                "existing_trace_id": trace_id,
                 "parent_observation_id": parent_observation_id,
             },
         },

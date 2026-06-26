@@ -84,7 +84,7 @@ def _assertion_2_technical_gherkin_coverage(
             "metadata": {
                 "generation_name": "stage2-gate-rubric-call",
                 "tags": ["stage2_gate", "norma"],
-                "trace_id": trace_id,
+                "existing_trace_id": trace_id,
                 "parent_observation_id": parent_observation_id,
             },
         },

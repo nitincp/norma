@@ -39,7 +39,7 @@ litellm_settings:
   max_concurrent_requests: 2
   request_timeout: 30
   drop_params: true
-  callbacks: ["langfuse_otel"]
+  success_callback: ["langfuse"]
 
 router_settings:
   routing_strategy: simple-shuffle

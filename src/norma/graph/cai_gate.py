@@ -75,7 +75,7 @@ def _assertion_3_rubric(
             "metadata": {
                 "generation_name": "cai-gate-rubric-call",
                 "tags": ["cai_gate", "norma"],
-                "trace_id": trace_id,
+                "existing_trace_id": trace_id,
                 "parent_observation_id": parent_observation_id,
             },
         },

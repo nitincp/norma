@@ -167,7 +167,7 @@ def spec_specialist_node(state: NormaState) -> NormaState:
                         "metadata": {
                             "generation_name": f"spec-specialist-{rec['artefact_key']}-llm-call",
                             "tags": ["spec_specialist", rec["artefact_key"], "norma"],
-                            "trace_id": langfuse.get_current_trace_id(),
+                            "existing_trace_id": langfuse.get_current_trace_id(),
                             "parent_observation_id": langfuse.get_current_observation_id(),
                         },
                     },
