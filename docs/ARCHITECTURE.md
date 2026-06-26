@@ -34,8 +34,23 @@ flowchart LR
 
     S2G{Stage 2 Gate}
     S2G -->|PASS| OUT([spec bundle])
-    S2G -->|FAIL| STOP([stop · refine PEF])
+    S2G -->|FAIL revise| CA[Conflict Analyst\ngemini-flash]
+    CA -->|winner · loser · excerpt| SSC[Spec Specialist\ncorrection mode]
+    SSC --> TGS
+    S2G -->|FAIL halt| STOP([stop · refine PEF])
 ```
+
+**Conflict correction loop:** on Stage 2 Gate failure, a Conflict Analyst node identifies the root upstream spec conflict and extracts an authoritative excerpt from the winning artefact. The losing specialist re-runs in correction mode (lean prompt: fix only the conflicting definition). Max 2 revision cycles (`MAX_REVISIONS`).
+
+**Layer hierarchy** — determines winner/loser via `depends_on` graph:
+
+| Layer | Standards | Role |
+|---|---|---|
+| 1 — Constraints | RFC 2119, ADR | Authoritative — never corrected |
+| 2 — Architecture | C4 / Structurizr | Authoritative — never corrected |
+| 3 — Interface | OpenAPI, AsyncAPI | Authoritative over Layer 4 |
+| 4 — Validation | JSON Schema | Corrected to conform to Layer 3 |
+| 5 — Tests | Technical Gherkin | Corrected to conform to all layers |
 
 ---
 
@@ -57,7 +72,10 @@ flowchart LR
 | `stage1_feedback` | `str` | STAGE 1 GATE | graph router |
 | `spec_advice` | `list[SpecRecommendation]` | SPEC ADVISOR | graph (fan-out via Send) |
 | `current_recommendation` | `SpecRecommendation` | graph (injected per Send) | SPEC SPECIALIST |
-| `spec_artefacts` | `dict[str, str]` | SPEC SPECIALIST(s) (merged) | STAGE 2 GATE |
+| `spec_artefacts` | `dict[str, str]` | SPEC SPECIALIST(s) (merged) | STAGE 2 GATE, CONFLICT ANALYST |
+| `gate_winner_key` | `str` | CONFLICT ANALYST | SPEC SPECIALIST (correction) |
+| `gate_loser_key` | `str` | CONFLICT ANALYST | SPEC SPECIALIST (correction) |
+| `gate_authoritative_excerpt` | `str` | CONFLICT ANALYST | SPEC SPECIALIST (correction) |
 
 ---
 
@@ -81,11 +99,15 @@ Runs in parallel with SPEC ADVISOR immediately after INTAKE. Permanent — every
 
 ### SPEC ADVISOR
 **File:** `src/norma/graph/spec_advisor.py` · **PEF:** CRISPE  
-**In:** `normalised_requirement`, `external_deps` · **Out:** `spec_advice`
+**In:** `normalised_requirement`, `selected_environment` · **Out:** `spec_advice`
 
 Recommends which spec languages are needed and why. Drives the dynamic fan-out: one `Send` per `SpecRecommendation`, each injecting `current_recommendation` into a SPEC SPECIALIST invocation.
 
 Each `SpecRecommendation` carries: `language`, `artefact_key`, `rationale`, `depends_on`, `requirement_segments`, and the CRISPE fields `role` / `insight` / `statement` injected into the specialist.
+
+**Input note:** does not receive Business Gherkin — Spec Advisor makes an architectural decision (which spec languages), not a behavioural one. The normalised requirement + environment choice carries all structural signal needed.
+
+**Output discipline:** hard word-count limits per field prevent JSON truncation at the `max_tokens` ceiling (`rationale` ≤15 words, `requirement_segments` ≤20 words, `role` ≤15 words, `insight` ≤3 bullets × ≤8 words, `statement` ≤3 lines). A one-shot JSON example in `prompts/spec_advisor.yaml` anchors the output schema.
 
 ---
 
@@ -94,6 +116,8 @@ Each `SpecRecommendation` carries: `language`, `artefact_key`, `rationale`, `dep
 **In:** `current_recommendation` · **Out:** `spec_artefacts[artefact_key]`
 
 Dispatched N times in parallel via `Send`. Results merged into `spec_artefacts` by the graph reducer. Fixed CRISPE fields (`capacity`, `personality`, `experiment`) are stable across all invocations; `role`, `insight`, `statement` are injected per recommendation.
+
+**Statement field — two-phase self-anchoring:** the `statement` field is prefixed at runtime with a two-phase instruction: Phase 1 — generate a 4–6 line canonical example of the target spec format (`## EXAMPLE`); Phase 2 — use that example as scaffold to write the full artefact (`## ARTEFACT`). The node extracts only the `## ARTEFACT` section from the response (falls back to full response if label absent). This prevents format regression without requiring a static example registry per spec type.
 
 ---
 
@@ -111,6 +135,15 @@ Recommends technology environments ranked by suitability. Stage 1 Gate selects `
 **Out:** `stage1_passed`, `stage1_feedback`, `selected_environment`
 
 Validates Gherkin artefacts and selects the environment. FAIL stops the pipeline. Verdict is parsed from the LLM response string — not inferred from content.
+
+---
+
+### CONFLICT ANALYST
+**File:** `src/norma/graph/conflict_analyst.py` · **PEF:** CRISPE  
+**Model:** `cloud/gemini-flash` (fixed — cost-optimised diagnostic node)  
+**In:** `gate_feedback`, `spec_artefacts`, `spec_advice` · **Out:** `gate_winner_key`, `gate_loser_key`, `gate_authoritative_excerpt`
+
+Invoked only on Stage 2 Gate failure. Identifies the root upstream spec conflict (not the Gherkin symptom), determines winner/loser via the `depends_on` layer hierarchy, and extracts the minimal authoritative excerpt from the winner. The losing specialist then re-runs in correction mode with this excerpt as its only constraint.
 
 ---
 
