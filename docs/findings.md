@@ -5,6 +5,31 @@ The format: what happened, what the numbers were, what it means going forward.
 
 ---
 
+## 2026-06-27 — Observability fix: langfuse_otel → success_callback + trace nesting
+
+**Context:** Langfuse was still showing $0 cost after the June 20 workaround (custom model price definitions). Root cause investigation revealed the problem was deeper than the model alias mismatch.
+
+**Root cause — wrong LiteLLM callback:**
+- `litellm-config.yaml` had `callbacks: ["langfuse_otel"]` — LiteLLM's OpenTelemetry integration.
+- `langfuse_otel` has a confirmed open bug ([#11742](https://github.com/BerriAI/litellm/issues/11742)): it does not properly nest observations, creating orphan root traces instead of child generations under Norma spans.
+- The `trace_id` / `parent_observation_id` metadata keys passed by all nodes are **OTEL-specific** and are ignored by the native Langfuse callback.
+
+**Fix 1 — Switch callback (1 line in litellm-config.yaml):**
+- `callbacks: ["langfuse_otel"]` → `success_callback: ["langfuse"]`
+- LiteLLM's native Langfuse callback computes cost directly (`response_cost`) using its own pricing table for the real model (e.g. `anthropic/claude-sonnet-4-6`) and sends the dollar amount to Langfuse. No Langfuse-side price lookup needed.
+- Langfuse receives cost as a pre-computed value; the custom model definitions registered in June are now dead weight (LiteLLM cost takes priority over Langfuse's inferred cost) but harmless to leave.
+
+**Fix 2 — Correct metadata key in all 10 node files:**
+- Native Langfuse callback uses `existing_trace_id` (not `trace_id`) to nest a generation under an existing trace.
+- All nodes updated: `"trace_id"` → `"existing_trace_id"` in the LiteLLM request metadata dict.
+- `parent_observation_id` key is unchanged — correct for both OTEL and native callback.
+
+**Result:** LiteLLM generations now appear nested under the correct Norma node span in Langfuse with accurate cost. Total cost for a clean sonnet run: ~$0.09.
+
+**Architectural note:** LiteLLM owns cost calculation (it knows the real model); Langfuse owns display and aggregation. This is the correct division — cost is a gateway-layer concern.
+
+---
+
 ## 2026-06-27 — REQ-005 T6: A/B re-run after T1–T5 fixes
 
 **Context:** `scripts/run_ab_test.py` — three sequential runs after all T1–T5 fixes (granular execution, self-anchoring one-shot, conflict correction loop). Same requirement (REQ-001). `NORMA_DEFAULT_MODEL` added to `_MODEL_KEYS` (was missing — spec specialists previously ran as sonnet regardless of variant).
@@ -70,7 +95,7 @@ The format: what happened, what the numbers were, what it means going forward.
 
 ---
 
-## 2026-06-20 — Langfuse cost tracking + observability fixes
+## 2026-06-20 — Langfuse cost tracking + observability fixes *(superseded by 2026-06-27 entry)*
 
 **Context:** After the A/B test, Langfuse was showing $0 cost for all traces despite correct token usage counts. Also, LiteLLM-generated OTel spans were appearing as disconnected root traces rather than nested under their Norma node spans.
 

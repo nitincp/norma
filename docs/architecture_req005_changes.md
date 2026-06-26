@@ -1,7 +1,7 @@
 # Architecture Delta — REQ-005
 
 **REQ:** REQ-005 — Node quality baseline, granular execution, cross-model consistency  
-**Status:** In progress (T1–T5 done and validated, T6 pending)  
+**Status:** Complete (T1–T6 done and validated)  
 **Merge into ARCHITECTURE.md when:** REQ-005 closes (all tasks done)  
 **Delete this file after merge.**
 
