@@ -7,6 +7,145 @@ See [PROCESS.md](PROCESS.md) for how tasks are built and iterated.
 
 ---
 
+## REQ-006 — LLM Calibration: Self-Correction Orchestration
+
+**Status:** Planned
+**Added:** 2026-06-27
+
+**Goal:** Make Norma self-calibrating across LLMs. When a model fails a gate, the system runs a reverse-prompting loop, classifies the suggested patch as universal or model-specific, and applies it to the right target. Over time: base CRISPE prompts get sharper, MODEL_TWEAKS accumulates model-specific overlays, and the quirk register is written by the models themselves.
+
+---
+
+### Problem
+
+REQ-005 A/B testing showed that Gemini and Grok fail on structural/coverage constraints that Sonnet handles natively. The current fix process is manual: run `run_reverse_prompt.py`, read the suggestion, decide what to edit. This works but doesn't scale — every new model or new node requires human triage.
+
+The infrastructure is already in place: `run_node.py` for isolated node runs, fixture snapshots as inputs, gate assertions as pass/fail signal, Langfuse for prompt versioning. What's missing is the orchestration that connects them.
+
+---
+
+### Design
+
+**Promotion decision rule — the key insight:**
+
+Every suggested patch from a reverse-prompting cycle is classified before being applied:
+
+```
+suggested patch
+    │
+    ├── universal — makes the instruction clearer for any model
+    │       → promote to base CRISPE prompt (prompts/<node>.yaml)
+    │       → re-seed to Langfuse, validate across fixture suite, commit
+    │
+    └── model-specific — only needed because this model behaves oddly
+            → MODEL_TWEAKS[(model_alias, node_name)] overlay
+            → stored in Langfuse as norma.<node>.<model-slug> prompt
+            → applied at runtime as field override, base CRISPE untouched
+```
+
+The classifier is itself an LLM call: *"Is this patch a general clarity improvement or a workaround for a model-specific quirk? Answer: universal / model-specific. Reason in one sentence."*
+
+**Langfuse as writable tool (not just observability):**
+
+The calibration loop treats Langfuse as a read/write knowledge store:
+- `get_prompt(node)` → current base prompt
+- `get_overlay(node, model)` → current model-specific overlay (if any)
+- `write_overlay(node, model, patch, label="experiment")` → write candidate
+- `promote_overlay(node, model, version)` → label="production" after gate passes on fixture suite
+
+This is standard Langfuse prompt management API — already supported. The shift is treating it as a tool the orchestration agent calls, not a dashboard humans read.
+
+**MODEL_TWEAKS registry:**
+
+```python
+# src/norma/model_tweaks.py
+MODEL_TWEAKS: dict[tuple[str, str], dict[str, str]] = {
+    # ("model_alias", "node_name"): {crispe_field: override_value}
+}
+```
+
+Applied at node initialisation: base CRISPE fields merged with overlay (overlay wins on conflict). Canonical prompt stays clean. Model-specific knowledge is explicit, localised, version-controlled separately.
+
+**Calibration loop flow:**
+
+```
+gate fails for (model, node)
+    │
+    ├── run run_reverse_prompt.py → suggested patch
+    ├── classify: universal or model-specific?
+    ├── if universal:
+    │     edit prompts/<node>.yaml (surgical, one field)
+    │     seed to Langfuse
+    │     validate across full fixture suite (all requirements)
+    │     if all pass → commit; else → discard, mark model-specific
+    ├── if model-specific:
+    │     write to MODEL_TWEAKS[(model, node)]
+    │     write to Langfuse as experiment overlay
+    │     run node with overlay → gate check
+    │     if pass → promote overlay to production
+    │     else → cycle again (max 3); on exhaust → "needs manual review"
+    └── record (cycle, patch, classification, gate_result) in quirk_log
+```
+
+**quirk_log as Langfuse dataset:**
+
+Not just a local file — write each entry as a Langfuse dataset item under `norma-quirk-register`. Queryable. Becomes the system's accumulated knowledge of what each model needs.
+
+---
+
+### Constraints
+
+- **Fixture suite required before auto-promotion** — a patch validated on REQ-001 alone is not safe to promote. Need ≥2 requirements in the fixture suite before universal promotion is allowed.
+- **One field per cycle** — `statement` field is highest-leverage; patch one field per cycle to keep diffs auditable.
+- **Cap at 3 cycles per (model, node)** — on exhaust, mark "needs manual review" and move on. Don't over-invest in a model that can't follow the format.
+- **No prompt branching in production** — MODEL_TWEAKS is runtime overlay only. The pipeline never forks on model identity at the node level.
+
+---
+
+### Future
+
+Once the calibration loop is stable, the orchestration meta-graph can be extracted as a reusable LangGraph subgraph. LLM orchestration frameworks (LangGraph, Rivet, similar) can host it independently of the Norma pipeline — making it a general-purpose LLM calibration tool, not Norma-specific.
+
+---
+
+### Tasks
+
+#### T1 — MODEL_TWEAKS registry + runtime overlay injection
+- [ ] `src/norma/model_tweaks.py` — dict keyed by `(model_alias, node_name)` → CRISPE field overrides
+- [ ] Each node reads overlay at initialisation and merges with base CRISPE fields
+- [ ] Empty by default; populated by calibration loop or manually
+- [ ] Unit test: verify overlay wins on conflict, base unchanged
+
+#### T2 — Classify patch: universal vs model-specific
+- [ ] Single LLM call (cheapest model): given base prompt + suggested patch, classify
+- [ ] Prompt: "Is this patch a general clarity improvement or a workaround for a model-specific quirk?"
+- [ ] Output: `{classification: "universal"|"model-specific", reason: str}`
+- [ ] Integrate into `run_reverse_prompt.py` output (add `--classify` flag)
+
+#### T3 — Promotion gate: validate across fixture suite before universal apply
+- [ ] `scripts/validate_prompt_patch.py <node> <patch>` — applies patch temporarily, runs `run_node.py` across all fixtures, checks gate assertions
+- [ ] Pass = all fixtures pass; fail = discard, treat as model-specific
+- [ ] Needs ≥2 requirements in fixture suite (add REQ-002 fixture)
+
+#### T4 — Langfuse overlay store
+- [ ] `norma.<node>.<model-slug>` naming convention for overlay prompts
+- [ ] `write_overlay`, `get_overlay`, `promote_overlay` helpers in `src/norma/langfuse_utils.py`
+- [ ] Overlay fetched at node startup if MODEL_TWEAKS has no entry (Langfuse is the source of truth)
+
+#### T5 — quirk_log as Langfuse dataset
+- [ ] Dataset name: `norma-quirk-register`
+- [ ] Each entry: `{model, node, cycle, patch, classification, gate_result, timestamp}`
+- [ ] Written at end of each calibration cycle (pass or fail)
+- [ ] Queryable via Langfuse UI for cross-model analysis
+
+#### T6 — Full calibration loop script
+- [ ] `scripts/run_calibration.py --node <node> --model <model> --snapshot <path> --target <path>`
+- [ ] Runs the full loop: reverse prompt → classify → apply → gate check → log
+- [ ] Max 3 cycles; on exhaust logs "needs manual review"
+- [ ] Dry-run mode (`--dry-run`): prints patch and classification, does not apply
+
+---
+
 ## REQ-001 — Greeting + Daily Content App
 
 **Status:** In progress  
