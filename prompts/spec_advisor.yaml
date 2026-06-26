@@ -61,7 +61,6 @@ statement: |
   ONE-SHOT EXAMPLE — read this to understand the required schema,
   then produce your own object for the actual requirement:
   {
-    "shared_types": ["ErrorResponse"],
     "specialists": [
       {
         "language": "RFC 2119",
@@ -84,8 +83,6 @@ statement: |
     statement            : ≤3 lines — artefact structure only, no prose
 
   Keys (top-level):
-    "shared_types"         : array of strings — type names referenced by ≥2 specialists
-                             (e.g. ["ErrorResponse", "UserId"]); empty array if none
     "specialists"          : array of specialist objects (schema below)
 
   Keys (each specialist object):
@@ -107,4 +104,4 @@ personality: |
 experiment: |
   Output ONLY the JSON object for the actual requirement — do not reproduce the one-shot example.
   No preamble, no explanation, no markdown fences.
-  If no spec languages are needed beyond Gherkin, return: {"shared_types": [], "specialists": []}
+  If no spec languages are needed beyond Gherkin, return: {"specialists": []}

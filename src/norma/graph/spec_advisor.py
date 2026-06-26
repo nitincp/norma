@@ -37,39 +37,32 @@ _PROMPT_CACHE_TTL = 300  # seconds
 _VALID_ARTEFACT_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
-def _parse_advice(text: str) -> tuple[list[SpecRecommendation], list[str]]:
+def _parse_advice(text: str) -> list[SpecRecommendation]:
     """
-    Parse the LLM JSON output into (specialists, shared_types).
+    Parse the LLM JSON output into a list of SpecRecommendations.
 
-    Accepts either the new wrapper format {"shared_types": [...], "specialists": [...]}
-    or the legacy bare array format. Drops malformed entries; failures surface as
-    empty lists (pipeline still runs Gherkin-only).
+    Accepts either the wrapper format {"specialists": [...]} or a bare array.
+    Drops malformed entries; failures surface as empty list (Gherkin-only run).
     """
     text = re.sub(r"```[a-z]*\n?", "", text).strip().rstrip("`").strip()
 
     try:
         raw = json.loads(text)
     except json.JSONDecodeError:
-        # Try to salvage a bare array
         m = re.search(r"\[.*\]", text, re.DOTALL)
         if not m:
-            return [], []
+            return []
         try:
             raw = json.loads(m.group())
         except json.JSONDecodeError:
-            return [], []
+            return []
 
-    # Unwrap object format; fall back to bare list
-    shared_types: list[str] = []
     if isinstance(raw, dict):
-        shared_types = [
-            str(t) for t in raw.get("shared_types", []) if isinstance(t, str) and t.strip()
-        ]
         items = raw.get("specialists", [])
     elif isinstance(raw, list):
         items = raw
     else:
-        return [], []
+        return []
 
     advice: list[SpecRecommendation] = []
     for item in items:
@@ -98,10 +91,9 @@ def _parse_advice(text: str) -> tuple[list[SpecRecommendation], list[str]]:
                 role=str(item["role"]),
                 insight=str(item["insight"]),
                 statement=str(item["statement"]),
-                shared_types=shared_types,
             )
         )
-    return advice, shared_types
+    return advice
 
 
 def _build_user_message(state: NormaState) -> str:
@@ -171,15 +163,14 @@ def spec_advisor_node(state: NormaState) -> NormaState:
 
             resp.raise_for_status()
             raw_content = resp.json()["choices"][0]["message"]["content"].strip()
-            advice, shared_types = _parse_advice(raw_content)
+            advice = _parse_advice(raw_content)
 
             span.update(output={
                 "specialist_count": len(advice),
                 "languages": [r["language"] for r in advice],
-                "shared_types": shared_types,
                 "raw": raw_content,
             })
 
     langfuse.flush()
 
-    return {"spec_advice": advice, "spec_shared_types": shared_types}
+    return {"spec_advice": advice}

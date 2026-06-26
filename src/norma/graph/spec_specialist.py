@@ -63,22 +63,12 @@ def _build_crispe(
     capacity: str,
     personality: str,
     experiment: str,
-    shared_types: list[str],
 ) -> CRISPE:
-    statement = _STATEMENT_PREFIX.format(language=rec["language"]) + rec["statement"]
-    insight = rec["insight"]
-    if shared_types:
-        types_str = "\n".join(f"  - {t}" for t in shared_types)
-        insight = (
-            f"Shared type contract — ALL specialists use EXACTLY these field names and types:\n"
-            f"{types_str}\n"
-            + insight
-        )
     return CRISPE(
         capacity=capacity,
         role=rec["role"],
-        insight=insight,
-        statement=statement,
+        insight=rec["insight"],
+        statement=_STATEMENT_PREFIX.format(language=rec["language"]) + rec["statement"],
         personality=personality,
         experiment=experiment,
     )
@@ -143,8 +133,7 @@ def spec_specialist_node(state: NormaState) -> NormaState:
         personality = _parse_crispe_section(prompt_text, "PERSONALITY")
         experiment = _parse_crispe_section(prompt_text, "EXPERIMENT")
 
-        shared_types = state.get("spec_shared_types") or []
-        system_prompt = _build_crispe(rec, capacity, personality, experiment, shared_types).system_prompt()
+        system_prompt = _build_crispe(rec, capacity, personality, experiment).system_prompt()
         user_message = (
             f"REQUIREMENT SEGMENTS (your scope — do not address anything outside this):\n"
             f"{rec['requirement_segments']}\n\n"
