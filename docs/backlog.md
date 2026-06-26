@@ -7,142 +7,16 @@ See [PROCESS.md](PROCESS.md) for how tasks are built and iterated.
 
 ---
 
-## REQ-006 — LLM Calibration: Self-Correction Orchestration
+## REQ-006 — Self-Calibrating Pipeline: LLM Calibration + Dynamic Technical Layer
 
-**Status:** Planned
-**Added:** 2026-06-27
+**Status:** Planned  
+**Added:** 2026-06-27  
+**Full spec:** [req-006.md](req-006.md)
 
-**Goal:** Make Norma self-calibrating across LLMs. When a model fails a gate, the system runs a reverse-prompting loop, classifies the suggested patch as universal or model-specific, and applies it to the right target. Over time: base CRISPE prompts get sharper, MODEL_TWEAKS accumulates model-specific overlays, and the quirk register is written by the models themselves.
+Two interlocking improvements:
 
----
-
-### Problem
-
-REQ-005 A/B testing showed that Gemini and Grok fail on structural/coverage constraints that Sonnet handles natively. The current fix process is manual: run `run_reverse_prompt.py`, read the suggestion, decide what to edit. This works but doesn't scale — every new model or new node requires human triage.
-
-The infrastructure is already in place: `run_node.py` for isolated node runs, fixture snapshots as inputs, gate assertions as pass/fail signal, Langfuse for prompt versioning. What's missing is the orchestration that connects them.
-
----
-
-### Design
-
-**Promotion decision rule — the key insight:**
-
-Every suggested patch from a reverse-prompting cycle is classified before being applied:
-
-```
-suggested patch
-    │
-    ├── universal — makes the instruction clearer for any model
-    │       → promote to base CRISPE prompt (prompts/<node>.yaml)
-    │       → re-seed to Langfuse, validate across fixture suite, commit
-    │
-    └── model-specific — only needed because this model behaves oddly
-            → MODEL_TWEAKS[(model_alias, node_name)] overlay
-            → stored in Langfuse as norma.<node>.<model-slug> prompt
-            → applied at runtime as field override, base CRISPE untouched
-```
-
-The classifier is itself an LLM call: *"Is this patch a general clarity improvement or a workaround for a model-specific quirk? Answer: universal / model-specific. Reason in one sentence."*
-
-**Langfuse as writable tool (not just observability):**
-
-The calibration loop treats Langfuse as a read/write knowledge store:
-- `get_prompt(node)` → current base prompt
-- `get_overlay(node, model)` → current model-specific overlay (if any)
-- `write_overlay(node, model, patch, label="experiment")` → write candidate
-- `promote_overlay(node, model, version)` → label="production" after gate passes on fixture suite
-
-This is standard Langfuse prompt management API — already supported. The shift is treating it as a tool the orchestration agent calls, not a dashboard humans read.
-
-**MODEL_TWEAKS registry:**
-
-```python
-# src/norma/model_tweaks.py
-MODEL_TWEAKS: dict[tuple[str, str], dict[str, str]] = {
-    # ("model_alias", "node_name"): {crispe_field: override_value}
-}
-```
-
-Applied at node initialisation: base CRISPE fields merged with overlay (overlay wins on conflict). Canonical prompt stays clean. Model-specific knowledge is explicit, localised, version-controlled separately.
-
-**Calibration loop flow:**
-
-```
-gate fails for (model, node)
-    │
-    ├── run run_reverse_prompt.py → suggested patch
-    ├── classify: universal or model-specific?
-    ├── if universal:
-    │     edit prompts/<node>.yaml (surgical, one field)
-    │     seed to Langfuse
-    │     validate across full fixture suite (all requirements)
-    │     if all pass → commit; else → discard, mark model-specific
-    ├── if model-specific:
-    │     write to MODEL_TWEAKS[(model, node)]
-    │     write to Langfuse as experiment overlay
-    │     run node with overlay → gate check
-    │     if pass → promote overlay to production
-    │     else → cycle again (max 3); on exhaust → "needs manual review"
-    └── record (cycle, patch, classification, gate_result) in quirk_log
-```
-
-**quirk_log as Langfuse dataset:**
-
-Not just a local file — write each entry as a Langfuse dataset item under `norma-quirk-register`. Queryable. Becomes the system's accumulated knowledge of what each model needs.
-
----
-
-### Constraints
-
-- **Fixture suite required before auto-promotion** — a patch validated on REQ-001 alone is not safe to promote. Need ≥2 requirements in the fixture suite before universal promotion is allowed.
-- **One field per cycle** — `statement` field is highest-leverage; patch one field per cycle to keep diffs auditable.
-- **Cap at 3 cycles per (model, node)** — on exhaust, mark "needs manual review" and move on. Don't over-invest in a model that can't follow the format.
-- **No prompt branching in production** — MODEL_TWEAKS is runtime overlay only. The pipeline never forks on model identity at the node level.
-
----
-
-### Future
-
-Once the calibration loop is stable, the orchestration meta-graph can be extracted as a reusable LangGraph subgraph. LLM orchestration frameworks (LangGraph, Rivet, similar) can host it independently of the Norma pipeline — making it a general-purpose LLM calibration tool, not Norma-specific.
-
----
-
-### Tasks
-
-#### T1 — MODEL_TWEAKS registry + runtime overlay injection
-- [ ] `src/norma/model_tweaks.py` — dict keyed by `(model_alias, node_name)` → CRISPE field overrides
-- [ ] Each node reads overlay at initialisation and merges with base CRISPE fields
-- [ ] Empty by default; populated by calibration loop or manually
-- [ ] Unit test: verify overlay wins on conflict, base unchanged
-
-#### T2 — Classify patch: universal vs model-specific
-- [ ] Single LLM call (cheapest model): given base prompt + suggested patch, classify
-- [ ] Prompt: "Is this patch a general clarity improvement or a workaround for a model-specific quirk?"
-- [ ] Output: `{classification: "universal"|"model-specific", reason: str}`
-- [ ] Integrate into `run_reverse_prompt.py` output (add `--classify` flag)
-
-#### T3 — Promotion gate: validate across fixture suite before universal apply
-- [ ] `scripts/validate_prompt_patch.py <node> <patch>` — applies patch temporarily, runs `run_node.py` across all fixtures, checks gate assertions
-- [ ] Pass = all fixtures pass; fail = discard, treat as model-specific
-- [ ] Needs ≥2 requirements in fixture suite (add REQ-002 fixture)
-
-#### T4 — Langfuse overlay store
-- [ ] `norma.<node>.<model-slug>` naming convention for overlay prompts
-- [ ] `write_overlay`, `get_overlay`, `promote_overlay` helpers in `src/norma/langfuse_utils.py`
-- [ ] Overlay fetched at node startup if MODEL_TWEAKS has no entry (Langfuse is the source of truth)
-
-#### T5 — quirk_log as Langfuse dataset
-- [ ] Dataset name: `norma-quirk-register`
-- [ ] Each entry: `{model, node, cycle, patch, classification, gate_result, timestamp}`
-- [ ] Written at end of each calibration cycle (pass or fail)
-- [ ] Queryable via Langfuse UI for cross-model analysis
-
-#### T6 — Full calibration loop script
-- [ ] `scripts/run_calibration.py --node <node> --model <model> --snapshot <path> --target <path>`
-- [ ] Runs the full loop: reverse prompt → classify → apply → gate check → log
-- [ ] Max 3 cycles; on exhaust logs "needs manual review"
-- [ ] Dry-run mode (`--dry-run`): prints patch and classification, does not apply
+- **Part A — LLM Calibration:** When a model fails a gate, run a reverse-prompting loop, classify the suggested patch as universal or model-specific, and apply it to the right target (base CRISPE prompt vs. MODEL_TWEAKS overlay). Quirk register written by the models themselves, stored as a Langfuse dataset.
+- **Part B — Dynamic Technical Layer:** Replace the hardwired `technical_gherkin_specialist` fan-in with a Technical Spec Advisor that reads `selected_environment` + `spec_artefacts` and decides which technical layer nodes to run — mirroring how the Spec Advisor drives the spec specialist fan-out.
 
 ---
 
@@ -378,8 +252,9 @@ Two-stage pipeline runs end-to-end. Business layer (P1) and technical layer (P2)
 
 ## REQ-005 — Node-level Quality: Granular Execution, Cross-Model Consistency, Model Quirk Discovery
 
-**Status:** Planned
+**Status:** Done
 **Added:** 2026-06-20
+**Closed:** 2026-06-27
 
 **Goal:** Before scaling the pipeline to more requirements or more models, establish a respectable quality baseline at the individual node level. Three interlocking problems to solve.
 
@@ -493,23 +368,15 @@ This keeps PEF as the single source of truth while using each model's self-knowl
 - **Rationale:** One-shot example anchors output schema; word-count limits prevent truncation; dropping Gherkin removes the behaviour/architecture signal conflict from the advisor's input
 - **Depends on:** T1, T3 (technique validated on Specialist first)
 
-#### T5 — Spec Advisor shared type contract
-- [ ] Audit Spec Advisor output: add `shared_types[]` field to `SpecAdvice` — a list of type names that multiple specialists will reference
-- [ ] Pass `shared_types` into each specialist's `insight` field: "The following shared types are pre-agreed: {shared_types}. Use these exact names and shapes."
-- [ ] Re-run with rfc2119 + openapi + jsonschema; verify Stage 2 Gate passes on `ErrorResponse` consistency
-- **Do after T3/T4:** pipeline design change with schema impact; unit tests (T2) must be in place to catch regressions; model behaviour should be stable first
-- **Depends on:** T1, T2
+#### T5 — Spec Advisor shared type contract ✓
+- **Superseded by conflict correction loop (T5 in commit 7dac259).** The hierarchical correction loop (Conflict Analyst → loser specialist corrects → gate re-runs) solved the cross-specialist consistency problem at the gate level without requiring a shared type contract upfront. The `shared_types[]` schema approach is absorbed into REQ-006 T1 (MODEL_TWEAKS + overlay design) where it belongs architecturally.
 
-#### T6 — AB test re-run with all fixes
-- [x] Re-run `scripts/run_ab_test.py` with all three models after T3–T5 fixes (2026-06-27)
-- [x] Fixed `_MODEL_KEYS` in `run_ab_test.py` — added `NORMA_DEFAULT_MODEL` (spec specialists were running as sonnet regardless of variant)
-- [x] Record cost per model in findings.md (sonnet $0.1128 / grok $0.0028 / gemini <P1 fail>)
-- [ ] **Target not yet met** — only Sonnet passes P1+P2; Gemini fails P1 (Business Gherkin missing named feature); Grok fails P2 (Spec Advisor still `[]`, Technical Gherkin no Scenario blocks)
-- **Remaining fixes needed (use `run_node.py` for targeted iteration):**
-  1. Gemini Business Gherkin — one-shot example or coverage instruction fix → re-run `run_node.py --model cloud/gemini-flash gherkin_specialist`
-  2. Grok Spec Advisor — reverse prompting loop (max 3 cycles); feed Sonnet PASS `spec_advice.json` as target
-  3. Grok Technical Gherkin — reverse prompting loop after Spec Advisor fix
-- **Depends on:** T3, T4, T5 (all fixes applied)
+#### T6 — AB test re-run with all fixes ✓
+- [x] Re-run `scripts/run_ab_test.py` — results recorded in findings.md (2026-06-27)
+- [x] Fixed `_MODEL_KEYS` — added `NORMA_DEFAULT_MODEL`
+- [x] Gemini gherkin coverage fix applied via reverse prompting (`run_reverse_prompt.py`) and validated in isolation via `run_node.py`
+- [x] `scripts/run_reverse_prompt.py` created — reverse prompting utility for future calibration cycles
+- **Remaining model quirks (grok Spec Advisor `[]`, grok Technical Gherkin no Scenario blocks) absorbed into REQ-006** — they are calibration problems, not REQ-005 scope. REQ-006 T6 covers the full calibration loop that handles these systematically.
 
 ---
 
@@ -586,67 +453,6 @@ INTAKE ───────────────────┤             
 - [ ] Claude Code session: `implement the application described in this spec bundle` (no other context)
 - [ ] Record: any guesses, any clarifying questions, any spec gaps
 - [ ] Triage gaps → PEF refinement tasks
-
----
-
-## REQ-006 — Technical Spec Advisor: Dynamic Technical Layer Selection
-
-**Status:** Planned
-**Added:** 2026-06-27
-
-**Goal:** Replace the hardwired `technical_gherkin_specialist` fan-in with a dynamic technical layer, analogous to how the Spec Advisor drives the spec specialist fan-out. A new **Technical Spec Advisor** reads the `selected_environment` (output of Pipeline 1) and decides which technical layer nodes are needed for this requirement — including whether Technical Gherkin is warranted at all.
-
-**Motivation:** `technical_gherkin_specialist` currently runs unconditionally for every requirement regardless of what spec artefacts were produced or what environment was selected. The same structural hardcoding problem that REQ-003 solved for the spec specialist layer exists here.
-
-**Architecture:**
-
-```
-Pipeline 2 — Technical Layer (revised)
-  [inputs: gherkin_business + selected_environment + spec_artefacts]
-    ├─ SPEC ADVISOR → Send(spec_specialist) × N  (existing)
-    └─ TECHNICAL SPEC ADVISOR
-         └─ routes to selected technical nodes (e.g. technical_gherkin, test_plan, sequence_diagram)
-              ▼
-         STAGE 2 GATE
-```
-
-**Key design decisions (to validate during implementation):**
-- **Technical Spec Advisor** reads `selected_environment` + `spec_artefacts` keys; decides which technical layer artefacts are meaningful for the chosen stack.
-- `technical_gherkin_specialist` becomes one candidate node among several — not the mandatory fan-in.
-- Fan-in to Stage 2 Gate happens after all selected technical nodes complete.
-- If no technical layer nodes are selected, Stage 2 Gate receives only the spec artefacts (valid — some requirements may need no technical Gherkin).
-
-**Candidate technical layer nodes:**
-| Node | When to include |
-|---|---|
-| `technical_gherkin_specialist` | Always when spec artefacts exist (default) |
-| `test_plan_specialist` | When QA test planning is needed (e.g. API, complex flows) |
-| `sequence_diagram_specialist` | When async/event flows are present (AsyncAPI artefact) |
-
----
-
-### Tasks
-
-#### T1 — Technical Spec Advisor node
-- [ ] CRISPE prompt: reads `selected_environment` + list of `spec_artefact` keys produced; emits structured advice — which technical layer nodes to run and why
-- [ ] `src/norma/graph/technical_spec_advisor.py`
-- [ ] Add `technical_spec_advice` to `NormaState`
-- [ ] Model: `cloud/claude-sonnet` (`NORMA_TECH_SPEC_ADVISOR_MODEL` env var)
-- [ ] Langfuse span: `technical_spec_advisor`
-
-#### T2 — Dynamic routing in Pipeline 2
-- [ ] Graph router reads `technical_spec_advice` and dispatches selected technical nodes via `Send()`
-- [ ] Fan-in to `stage2_gate` after all selected technical nodes complete
-- [ ] Fallback: if advice is empty, route directly to `stage2_gate`
-
-#### T3 — Decouple `technical_gherkin_specialist` from fan-in role
-- [ ] Remove hardwired `spec_specialist → technical_gherkin_specialist` edge
-- [ ] `technical_gherkin_specialist` becomes a `Send()` target like any other technical node
-- [ ] Update Stage 2 Gate: assertions must handle absence of `gherkin_technical` gracefully
-
-#### T4 — End-to-end test
-- [ ] Run Pipeline 2 with a requirement that produces no spec artefacts — verify `technical_gherkin_specialist` does not run
-- [ ] Run with full artefact set — verify Technical Spec Advisor selects `technical_gherkin_specialist` and output is unchanged from current behaviour
 
 ---
 
